@@ -3835,6 +3835,28 @@
             }
         }
 
+        // Подставить категории коллекции, подходящие под жанры. Только если
+        // основная категория ещё не выбрана; новых категорий не создаём.
+        async function fillCategoriesFromGenres(genres) {
+            const mainInput = document.getElementById('mainCategory');
+            if (mainInput.value.trim()) return;
+            try {
+                const res = await fetch('/api/categories/match', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ genres })
+                });
+                if (!res.ok) return;
+                const match = await res.json();
+                if (!match.mainCategory) return;
+                mainInput.value = match.mainCategory;
+                categoryAutocomplete.updateAddButton();
+                match.subCategories.forEach(cat => subCategoriesManager.addCategory(cat));
+            } catch (error) {
+                console.warn('Не удалось подобрать категории:', error);
+            }
+        }
+
         // Загрузка данных из API Кинопоиска
         async function loadDataFromAPI() {
             const title = document.getElementById('filmTitle').value.trim();
@@ -4018,10 +4040,11 @@
                     }
                 }
                 
-                // 6.5. Жанры (для подсказки)
+                // 6.5. Жанры (для подсказки) и категории из них
                 if (filmDetails.genres && filmDetails.genres.length > 0) {
                     const genres = filmDetails.genres.map(g => g.genre);
                     genreHintManager.update(genres);
+                    await fillCategoriesFromGenres(genres);
                 }
                 
                 // 6.6. Дополнительная информация

@@ -234,3 +234,30 @@ test('карточка, открытая в ktw, попадает во врем�
     assert.equal(item.description, 'Описание');
     assert.equal(await byKp(9999), undefined);
 });
+
+test('история для строки «продолжить»: только начатое, новое сверху, со ссылкой на карточку', async () => {
+    const now = Date.now() + 100000;
+    writeHistory([
+        { filmId: '301', title: 'Матрица', serial: false, timePos: 3600, duration: 8000, percentage: 45, updatedAt: now - 5000 },
+        { filmId: '404900', title: 'Во все тяжкие', serial: true, season: 3, episode: 1, timePos: 10, percentage: 1, updatedAt: now },
+        { filmId: '42664', title: 'Только открыл', serial: false, timePos: 0, percentage: 0, updatedAt: now + 1 },
+        { filmId: '888', title: 'Без ключа', serial: false, timePos: 7000, duration: 7200, percentage: 97, watched: true, updatedAt: now - 9000 }
+    ], { 404900: ['3_1'] });
+
+    const { items } = await (await api('GET', '/api/ktw/history')).json();
+    assert.deepEqual(items.map((i) => i.kpId), ['404900', '301', '888']);
+    assert.equal(items[0].season, 3);
+    assert.equal(items[0].episode, 1);
+    assert.ok(items[0].filmId);
+    assert.equal(items[1].finished, false);
+    assert.equal(items[2].finished, true);
+});
+
+test('продолжение в ktw передаёт серию и --resume, мусор отклоняет', async () => {
+    process.env.KINOTEKA_NO_LAUNCH = '1';
+    const ok = await (await api('POST', '/api/ktw/watch', { kpId: 404900, season: 3, episode: 1, resume: true })).json();
+    assert.deepEqual(ok.args, ['watch', '404900', '-s', '3', '-e', '1', '--resume']);
+
+    const bad = await api('POST', '/api/ktw/watch', { kpId: 404900, season: '3 & calc', episode: 1 });
+    assert.equal(bad.status, 400);
+});

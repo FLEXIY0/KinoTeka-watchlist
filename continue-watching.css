@@ -1,0 +1,124 @@
+/* Скрытая строка «продолжить просмотр» под плитками главной.
+   Невидима, пока мышь не над плитками или под ними; при наведении на саму
+   строку под ней раскрывается история последних просмотров из ktw. */
+
+.cw {
+    position: fixed;
+    left: 50%;
+    top: calc(50% + 118px);
+    transform: translateX(-50%);
+    min-width: 320px;
+    max-width: min(520px, calc(100vw - 32px));
+    padding: 14px 40px 30px; /* невидимые поля — зона, где строка проявляется */
+    opacity: 0;
+    transition: opacity 0.3s ease 0.5s; /* прячется не сразу — успеть довести мышь */
+    z-index: 20; /* выше зоны кнопки «+» внизу, чтобы раскрытая история не терялась */
+    font-size: 15px;
+    color: var(--text-muted, #6e6e6e);
+    text-align: center;
+}
+
+.cw[hidden] {
+    display: none;
+}
+
+.container:hover ~ .cw,
+.cw:hover,
+.cw:focus-within {
+    opacity: 1;
+    transition-delay: 0s;
+}
+
+.cw a {
+    color: inherit;
+    text-decoration: none;
+    cursor: pointer;
+}
+
+.cw-row {
+    display: block;
+    padding: 4px 0;
+}
+
+.cw-row .material-symbols-outlined {
+    font-size: 18px;
+    vertical-align: -4px;
+    margin-right: 2px;
+    color: var(--text-tertiary, #848484);
+}
+
+.cw-title {
+    color: var(--text-secondary, #9E9E9E);
+    transition: color 0.2s ease;
+}
+
+.cw-row:hover .cw-title {
+    color: var(--text-hover, #ffffff);
+}
+
+.cw-line {
+    display: block;
+    height: 2px;
+    margin-top: 6px;
+    border-radius: 2px;
+    background: var(--bg-tertiary, #2a2a2a);
+    overflow: hidden;
+}
+
+.cw-line i {
+    display: block;
+    height: 100%;
+    border-radius: 2px;
+    background: var(--text-tertiary, #848484);
+}
+
+.cw-card {
+    margin-left: 6px;
+    font-size: 15px !important;
+    opacity: 0;
+    vertical-align: -3px;
+    transition: opacity 0.2s ease;
+}
+
+.cw-row:hover .cw-card {
+    opacity: 1;
+}
+
+/* История: раскрывается при наведении на строку */
+.cw-more {
+    max-height: 0;
+    overflow: hidden;
+    opacity: 0;
+    transition: max-height 0.35s ease, opacity 0.25s ease;
+    font-size: 13px;
+}
+
+.cw:hover .cw-more,
+.cw:focus-within .cw-more {
+    max-height: 260px;
+    opacity: 1;
+}
+
+.cw-more .cw-row {
+    padding: 5px 0 3px;
+}
+
+.cw-more .cw-line {
+    height: 1px;
+    margin-top: 4px;
+}
+
+.cw-status {
+    min-height: 18px;
+    font-size: 12px;
+    color: var(--text-tertiary, #848484);
+}
+
+@media (max-width: 768px) {
+    /* Без мыши наводить нечем — показываем строку всегда, под плитками */
+    .cw {
+        top: auto;
+        bottom: 70px;
+        opacity: 1;
+    }
+}

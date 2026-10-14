@@ -7,6 +7,7 @@ const http = require('http');
 const { spawn } = require('child_process');
 const kinopoisk = require('./lib/kinopoisk');
 const { createKtwSync } = require('./lib/ktw-sync');
+const { matchCategories } = require('./lib/categories');
 
 const app = express();
 const PORT = Number(process.env.PORT) || 3000;
@@ -586,6 +587,16 @@ app.post('/api/categories', async (req, res) => {
     }
 });
 
+// API: Подобрать категории коллекции под жанры (для страницы карточки)
+app.post('/api/categories/match', async (req, res) => {
+    try {
+        const genres = Array.isArray(req.body && req.body.genres) ? req.body.genres.map(String) : [];
+        res.json(matchCategories(genres, await getAllCategories()));
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
 // API: Обновить категорию
 app.put('/api/categories/:name', async (req, res) => {
     try {
@@ -710,7 +721,15 @@ function importFromKinopoisk(kpId, extra = {}, { light = false } = {}) {
         if (existing) return { film: existing, created: false };
 
         const card = await kinopoisk.getFilmCard(key, { light });
-        const film = await createFilm({ ...card.film, ...extra });
+
+        // Категории — из жанров, только среди уже существующих
+        const categoryFields = {};
+        if (!extra.mainCategory) {
+            const matched = matchCategories(card.film.genres, await getAllCategories());
+            if (matched.mainCategory) Object.assign(categoryFields, matched);
+        }
+
+        const film = await createFilm({ ...card.film, ...categoryFields, ...extra });
 
         const images = {};
         if (card.posterUrl) {
@@ -794,11 +813,22 @@ app.post('/api/ktw/watch', (req, res) => {
     if (!/^\d+$/.test(kpId)) {
         return res.status(400).json({ error: 'kpId is required', success: false });
     }
+    // Продолжить с места: серия и сохранённая секунда из истории ktw
+    const args = ['watch', kpId];
+    const { season, episode, resume } = req.body;
+    if (season !== undefined || episode !== undefined) {
+        if (!/^\d+$/.test(String(season)) || !/^\d+$/.test(String(episode))) {
+            return res.status(400).json({ error: 'Invalid season/episode', success: false });
+        }
+        args.push('-s', String(season), '-e', String(episode));
+    }
+    if (resume === true) args.push('--resume');
+
     if (process.env.KINOTEKA_NO_LAUNCH === '1') {
-        return res.json({ success: true, launched: false, dryRun: true });
+        return res.json({ success: true, launched: false, dryRun: true, args });
     }
     try {
-        const launched = launchKtwWindow(['watch', kpId]);
+        const launched = launchKtwWindow(args);
         if (!launched) {
             return res.status(501).json({ error: 'Не нашёл терминал. Запустите вручную: ktw ' + kpId, success: false });
         }
@@ -823,6 +853,15 @@ const ktwSync = createKtwSync({
 app.get('/api/ktw/recent', async (req, res) => {
     try {
         res.json({ items: await ktwSync.getRecent() });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Последние просмотры в ktw — для строки «продолжить» на главной
+app.get('/api/ktw/history', async (req, res) => {
+    try {
+        res.json({ items: await ktwSync.getHistory(6) });
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
