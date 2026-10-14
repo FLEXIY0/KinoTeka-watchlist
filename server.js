@@ -11,13 +11,20 @@ const PORT = Number(process.env.PORT) || 3000;
 // Для доступа с других устройств: HOST=0.0.0.0 npm start
 const HOST = process.env.HOST || '127.0.0.1';
 
-const FILMS_DIR = path.join(__dirname, 'films_and_serials');
-const CATEGORIES_DIR = path.join(__dirname, 'ALL_CATEGORIES');
+// Папка с данными пользователя. По умолчанию — папка приложения,
+// но её можно вынести отдельно: KINOTEKA_DATA_DIR=D:\\Kinoteka npm start
+const DATA_DIR = path.resolve(process.env.KINOTEKA_DATA_DIR || __dirname);
+const FILMS_DIR = path.join(DATA_DIR, 'films_and_serials');
+const CATEGORIES_DIR = path.join(DATA_DIR, 'ALL_CATEGORIES');
 const CATEGORIES_FILE = path.join(CATEGORIES_DIR, 'categories.json');
-const SETTINGS_FILE = path.join(__dirname, 'settings.json');
+const SETTINGS_FILE = path.join(DATA_DIR, 'settings.json');
+
+const IMAGE_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.webp', '.gif', '.avif', '.bmp'];
+const MAX_IMAGE_SIZE = 20 * 1024 * 1024; // 20 МБ
 
 // Middleware
 app.use(express.json({ limit: '10mb' }));
+app.use('/films_and_serials', express.static(FILMS_DIR)); // Картинки фильмов из папки данных
 app.use(express.static(__dirname)); // Обслуживание статических файлов (не зависит от текущей папки)
 
 // ID карточки — только число, иначе через ../ можно добраться до любой папки на диске
@@ -42,6 +49,37 @@ async function ensureDir(dir) {
     } catch {
         await fs.mkdir(dir, { recursive: true });
     }
+}
+
+// Путь к файлу для браузера: относительно папки данных и всегда через "/"
+function toPublicPath(filePath) {
+    return path.relative(DATA_DIR, filePath).split(path.sep).join('/');
+}
+
+// Запись JSON через временный файл: если процесс упадёт посреди записи,
+// старый файл останется целым, а не превратится в обрезанный JSON
+async function writeJsonAtomic(file, data) {
+    const tmp = `${file}.${process.pid}.tmp`;
+    const json = JSON.stringify(data, null, 2);
+    await fs.writeFile(tmp, json);
+    try {
+        await fs.rename(tmp, file);
+    } catch (error) {
+        // На Windows антивирус или индексатор иногда держат файл и rename падает
+        if (error.code !== 'EPERM' && error.code !== 'EACCES' && error.code !== 'EBUSY') throw error;
+        await fs.writeFile(file, json);
+        await fs.unlink(tmp).catch(() => {});
+    }
+}
+
+// Простая очередь: операции, переданные сюда, выполняются строго по одной.
+// Нужна, чтобы два одновременных запроса не получили один и тот же ID
+// и не перезаписали изменения друг друга.
+let writeQueue = Promise.resolve();
+function serialized(fn) {
+    const run = writeQueue.then(fn, fn);
+    writeQueue = run.catch(() => {});
+    return run;
 }
 
 // Вспомогательная функция для удаления всех файлов в папке
@@ -94,16 +132,30 @@ const previewStorage = multer.diskStorage({
     }
 });
 
-const uploadBanner = multer({ storage: bannerStorage });
-const uploadPreview = multer({ storage: previewStorage });
+// Принимаем только картинки: иначе можно было бы загрузить, например, .html,
+// и он открывался бы с того же адреса, что и само приложение
+function imageFileFilter(req, file, cb) {
+    const ext = path.extname(file.originalname).toLowerCase();
+    if (file.mimetype.startsWith('image/') && IMAGE_EXTENSIONS.includes(ext)) {
+        cb(null, true);
+    } else {
+        const error = new Error('Можно загружать только изображения');
+        error.status = 400;
+        cb(error);
+    }
+}
+
+const uploadOptions = { fileFilter: imageFileFilter, limits: { fileSize: MAX_IMAGE_SIZE } };
+const uploadBanner = multer({ storage: bannerStorage, ...uploadOptions });
+const uploadPreview = multer({ storage: previewStorage, ...uploadOptions });
 
 // Получить следующий доступный ID
 async function getNextId() {
     await ensureDir(FILMS_DIR);
     const files = await fs.readdir(FILMS_DIR);
     const ids = files
-        .filter(f => !isNaN(f))
-        .map(f => parseInt(f))
+        .filter(f => /^\d+$/.test(f))
+        .map(f => parseInt(f, 10))
         .filter(n => !isNaN(n));
     return ids.length > 0 ? Math.max(...ids) + 1 : 1;
 }
@@ -113,7 +165,7 @@ app.get('/api/films', async (req, res) => {
     try {
         await ensureDir(FILMS_DIR);
         const files = await fs.readdir(FILMS_DIR);
-        const filmIds = files.filter(f => !isNaN(f));
+        const filmIds = files.filter(f => /^\d+$/.test(f));
         
         const films = await Promise.all(
             filmIds.map(async (id) => {
@@ -166,7 +218,7 @@ app.get('/api/films/:id', async (req, res) => {
 async function getFiles(dir) {
     try {
         const files = await fs.readdir(dir);
-        return files.map(f => path.relative(__dirname, path.join(dir, f)));
+        return files.map(f => toPublicPath(path.join(dir, f)));
     } catch {
         return [];
     }
@@ -175,11 +227,15 @@ async function getFiles(dir) {
 // API: Создать новую карточку
 app.post('/api/films', async (req, res) => {
     try {
-        const id = await getNextId();
+        // ID выбирается и папка создаётся атомарно относительно других запросов
+        const id = await serialized(async () => {
+            const nextId = await getNextId();
+            await fs.mkdir(path.join(FILMS_DIR, nextId.toString()));
+            return nextId;
+        });
         const filmDir = path.join(FILMS_DIR, id.toString());
         
         // Создать структуру папок
-        await ensureDir(filmDir);
         await ensureDir(path.join(filmDir, 'banner'));
         await ensureDir(path.join(filmDir, 'preview', 'preview1'));
         await ensureDir(path.join(filmDir, 'preview', 'preview2'));
@@ -203,10 +259,7 @@ app.post('/api/films', async (req, res) => {
             createdAt: new Date().toISOString()
         };
         
-        await fs.writeFile(
-            path.join(filmDir, 'data.json'),
-            JSON.stringify(initialData, null, 2)
-        );
+        await writeJsonAtomic(path.join(filmDir, 'data.json'), initialData);
         
         // Создать HTML файл
         const htmlContent = await generateFilmHTML(id, initialData);
@@ -224,23 +277,33 @@ app.put('/api/films/:id', async (req, res) => {
         const { id } = req.params;
         const filmDir = path.join(FILMS_DIR, id);
         const dataPath = path.join(filmDir, 'data.json');
-        
-        // Читаем существующие данные
-        let existingData = {};
+
         try {
-            const data = await fs.readFile(dataPath, 'utf8');
-            existingData = JSON.parse(data);
-        } catch {}
-        
-        // Объединяем с новыми данными
-        const updatedData = {
-            ...existingData,
-            ...req.body,
-            updatedAt: new Date().toISOString()
-        };
-        
-        await fs.writeFile(dataPath, JSON.stringify(updatedData, null, 2));
-        
+            await fs.access(filmDir);
+        } catch {
+            return res.status(404).json({ error: 'Film not found' });
+        }
+
+        const updatedData = await serialized(async () => {
+            // Читаем существующие данные
+            let existingData = {};
+            try {
+                const data = await fs.readFile(dataPath, 'utf8');
+                existingData = JSON.parse(data);
+            } catch {}
+
+            // Объединяем с новыми данными
+            const merged = {
+                ...existingData,
+                ...req.body,
+                updatedAt: new Date().toISOString()
+            };
+            delete merged.id;
+
+            await writeJsonAtomic(dataPath, merged);
+            return merged;
+        });
+
         res.json({ id, ...updatedData });
     } catch (error) {
         res.status(500).json({ error: error.message });
@@ -253,7 +316,7 @@ app.post('/api/films/:id/upload/banner', uploadBanner.single('file'), async (req
         if (!req.file) {
             return res.status(400).json({ error: 'File is required', success: false });
         }
-        const filePath = path.relative(__dirname, req.file.path);
+        const filePath = toPublicPath(req.file.path);
         res.json({ path: filePath, success: true });
     } catch (error) {
         res.status(500).json({ error: error.message });
@@ -266,7 +329,7 @@ app.post('/api/films/:id/upload/preview/:previewNumber', uploadPreview.single('f
         if (!req.file) {
             return res.status(400).json({ error: 'File is required', success: false });
         }
-        const filePath = path.relative(__dirname, req.file.path);
+        const filePath = toPublicPath(req.file.path);
         res.json({ path: filePath, success: true });
     } catch (error) {
         res.status(500).json({ error: error.message });
@@ -369,7 +432,7 @@ app.post('/api/films/:id/download-image', async (req, res) => {
         const filePath = path.join(uploadPath, filename);
         await fs.writeFile(filePath, imageBuffer);
         
-        const relativePath = path.relative(__dirname, filePath);
+        const relativePath = toPublicPath(filePath);
         console.log(`💾 [Film ${id}] Изображение сохранено: ${relativePath}`);
         
         res.json({ path: relativePath, success: true });
@@ -394,18 +457,29 @@ app.delete('/api/films/:id', async (req, res) => {
     }
 });
 
+function escapeHtml(value) {
+    return String(value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
 // Генерация HTML для карточки фильма
 async function generateFilmHTML(id, data) {
+    const title = escapeHtml(data.title);
+    const rating = escapeHtml(data.rating);
     return `<!DOCTYPE html>
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>${data.title}</title>
+    <title>${title}</title>
 </head>
 <body>
-    <h1>${data.title}</h1>
-    <p>Рейтинг: ${data.rating}/10</p>
+    <h1>${title}</h1>
+    <p>Рейтинг: ${rating}/10</p>
     <a href="../../edit-film.html?id=${id}">Открыть карточку</a>
     <br>
     <a href="../../index.html">На главную</a>
@@ -429,7 +503,7 @@ async function getAllCategories() {
 // Сохранить категории
 async function saveCategories(categories) {
     await ensureDir(CATEGORIES_DIR);
-    await fs.writeFile(CATEGORIES_FILE, JSON.stringify(categories, null, 2));
+    await writeJsonAtomic(CATEGORIES_FILE, categories);
 }
 
 // API: Получить все категории
@@ -555,7 +629,7 @@ app.post('/api/settings', async (req, res) => {
             existing = JSON.parse(await fs.readFile(SETTINGS_FILE, 'utf8'));
         } catch {}
         const updated = { ...existing, ...req.body };
-        await fs.writeFile(SETTINGS_FILE, JSON.stringify(updated, null, 2));
+        await writeJsonAtomic(SETTINGS_FILE, updated);
         res.json({ success: true });
     } catch (error) {
         res.status(500).json({ error: error.message });
@@ -574,17 +648,22 @@ app.get('/index1.html', (req, res) => {
 
 // Обработчик ошибок (например, от multer), чтобы сервер отвечал JSON, а не падал
 app.use((err, req, res, next) => {
+    // Ошибки multer (например, слишком большой файл) и наши с полем status — это ошибки клиента
+    const status = err.status || (err instanceof multer.MulterError ? 400 : 500);
     console.error('❌ Ошибка запроса:', err.message);
-    res.status(500).json({ error: err.message, success: false });
+    res.status(status).json({ error: err.message, success: false });
 });
 
 // Запуск сервера
-async function start() {
+async function start(port = PORT, host = HOST) {
     await ensureDir(FILMS_DIR);
     await ensureDir(CATEGORIES_DIR);
 
-    const server = app.listen(PORT, HOST, () => {
-        console.log(`Сервер запущен на http://localhost:${PORT}`);
+    const server = app.listen(port, host, () => {
+        console.log(`Сервер запущен на http://localhost:${server.address().port}`);
+        if (DATA_DIR !== __dirname) {
+            console.log(`Папка данных: ${DATA_DIR}`);
+        }
     });
 
     server.on('error', (err) => {
@@ -595,7 +674,14 @@ async function start() {
         }
         process.exit(1);
     });
+
+    return server;
 }
 
-start();
+// При `node server.js` запускаем сервер; при require (в тестах) — только экспортируем
+if (require.main === module) {
+    start();
+}
+
+module.exports = { app, start };
 
