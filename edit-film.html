@@ -3815,6 +3815,26 @@
             }
         }
 
+        // Есть ли ключ Кинопоиска на сервере. Ключ, сохранённый раньше в браузере,
+        // один раз переносится на сервер, чтобы не вводить его заново.
+        async function ensureKinopoiskKey() {
+            try {
+                const status = await (await fetch('/api/kinopoisk/key')).json();
+                if (status.hasKey) return true;
+                const oldKey = localStorage.getItem('kinopoiskApiKey');
+                if (!oldKey) return false;
+                const res = await fetch('/api/kinopoisk/key', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ key: oldKey })
+                });
+                if (res.ok) localStorage.removeItem('kinopoiskApiKey');
+                return res.ok;
+            } catch {
+                return false;
+            }
+        }
+
         // Загрузка данных из API Кинопоиска
         async function loadDataFromAPI() {
             const title = document.getElementById('filmTitle').value.trim();
@@ -3824,54 +3844,27 @@
                 return;
             }
             
-            // Проверить наличие сохраненного API ключа
-            let apiKey = localStorage.getItem('kinopoiskApiKey');
-            let needsApiKey = !apiKey;
-            
-            // Функция для запроса API ключа
-            const requestApiKey = () => {
-                const key = prompt('Введите ваш API ключ с https://kinopoiskapiunofficial.tech/\n\n(Если у вас нет ключа, зарегистрируйтесь на сайте)', apiKey || '');
-                if (!key) {
-                    categoryAutocomplete.showNotification('API ключ не указан', 'warning');
-                    return null;
-                }
-                return key;
-            };
-            
-            // Если ключа нет, запросить его
-            if (needsApiKey) {
-                apiKey = requestApiKey();
-                if (!apiKey) return;
-                // Сохранить ключ для будущего использования
-                localStorage.setItem('kinopoiskApiKey', apiKey);
+            // Ключ Кинопоиска хранится на сервере (общий с поиском на главной и ktw)
+            if (!(await ensureKinopoiskKey())) {
+                categoryAutocomplete.showNotification('Нет ключа Кинопоиска. Наведите на верхний край главной страницы и вставьте ключ в поиск', 'warning');
+                return;
             }
-            
+
             categoryAutocomplete.showNotification('Загрузка данных...', 'success');
             
             try {
                 // Шаг 1: Поиск фильма по названию
-                const searchResponse = await fetch(`https://kinopoiskapiunofficial.tech/api/v2.1/films/search-by-keyword?keyword=${encodeURIComponent(title)}`, {
+                const searchResponse = await fetch(`/api/kinopoisk/raw/api/v2.1/films/search-by-keyword?keyword=${encodeURIComponent(title)}`, {
                     headers: {
-                        'X-API-KEY': apiKey,
                         'Content-Type': 'application/json'
                     }
                 });
                 
                 if (!searchResponse.ok) {
-                    if (searchResponse.status === 401 || searchResponse.status === 403) {
-                        // Ошибка авторизации - удаляем старый ключ и запрашиваем новый
-                        localStorage.removeItem('kinopoiskApiKey');
-                        categoryAutocomplete.showNotification('API ключ недействителен или истек. Введите новый ключ.', 'warning');
-                        
-                        // Запросить новый ключ
-                        apiKey = requestApiKey();
-                        if (!apiKey) return;
-                        
-                        // Сохранить и повторить попытку
-                        localStorage.setItem('kinopoiskApiKey', apiKey);
-                        
-                        // Рекурсивно вызвать функцию с новым ключом
-                        return loadDataFromAPI();
+                    if (searchResponse.status === 401 || searchResponse.status === 429) {
+                        const err = await searchResponse.json().catch(() => ({}));
+                        categoryAutocomplete.showNotification(err.error || 'Проблема с ключом Кинопоиска', 'warning');
+                        return;
                     }
                     throw new Error('Ошибка поиска фильма');
                 }
@@ -3890,9 +3883,8 @@
                 kinopoiskUrl = `https://www.kinopoisk.ru/film/${filmId}/`;
                 
                 // Шаг 2: Получение детальной информации о фильме
-                const detailsResponse = await fetch(`https://kinopoiskapiunofficial.tech/api/v2.2/films/${filmId}`, {
+                const detailsResponse = await fetch(`/api/kinopoisk/raw/api/v2.2/films/${filmId}`, {
                     headers: {
-                        'X-API-KEY': apiKey,
                         'Content-Type': 'application/json'
                     }
                 });
@@ -3912,9 +3904,8 @@
                 updateFilmLinks();
                 
                 // Шаг 3: Получение актеров и режиссеров
-                const staffResponse = await fetch(`https://kinopoiskapiunofficial.tech/api/v1/staff?filmId=${filmId}`, {
+                const staffResponse = await fetch(`/api/kinopoisk/raw/api/v1/staff?filmId=${filmId}`, {
                     headers: {
-                        'X-API-KEY': apiKey,
                         'Content-Type': 'application/json'
                     }
                 });
@@ -3925,9 +3916,8 @@
                 }
                 
                 // Шаг 4: Получение кадров из фильма
-                const imagesResponse = await fetch(`https://kinopoiskapiunofficial.tech/api/v2.2/films/${filmId}/images?type=STILL&page=1`, {
+                const imagesResponse = await fetch(`/api/kinopoisk/raw/api/v2.2/films/${filmId}/images?type=STILL&page=1`, {
                     headers: {
-                        'X-API-KEY': apiKey,
                         'Content-Type': 'application/json'
                     }
                 });
@@ -4058,9 +4048,8 @@
                 
                 // 4. Бюджет (из API v2.2/films/{id}/box_office)
                 try {
-                    const boxOfficeResponse = await fetch(`https://kinopoiskapiunofficial.tech/api/v2.1/films/${filmId}/box_office`, {
+                    const boxOfficeResponse = await fetch(`/api/kinopoisk/raw/api/v2.1/films/${filmId}/box_office`, {
                         headers: {
-                            'X-API-KEY': apiKey,
                             'Content-Type': 'application/json'
                         }
                     });
@@ -4090,9 +4079,8 @@
                 
                 // 5. Интересные факты с поддержкой HTML-ссылок
                 try {
-                    const factsResponse = await fetch(`https://kinopoiskapiunofficial.tech/api/v2.2/films/${filmId}/facts`, {
+                    const factsResponse = await fetch(`/api/kinopoisk/raw/api/v2.2/films/${filmId}/facts`, {
                         headers: {
-                            'X-API-KEY': apiKey,
                             'Content-Type': 'application/json'
                         }
                     });

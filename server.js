@@ -4,6 +4,9 @@ const path = require('path');
 const multer = require('multer');
 const https = require('https');
 const http = require('http');
+const { spawn } = require('child_process');
+const kinopoisk = require('./lib/kinopoisk');
+const { createKtwSync } = require('./lib/ktw-sync');
 
 const app = express();
 const PORT = Number(process.env.PORT) || 3000;
@@ -23,6 +26,17 @@ const IMAGE_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.webp', '.gif', '.avif', '.b
 const MAX_IMAGE_SIZE = 20 * 1024 * 1024; // 20 МБ
 
 // Middleware
+
+// API доступно только по адресу localhost: сервер умеет сохранять ключ и
+// запускать ktw, и чужой сайт не должен дотянуться до него через подмену DNS.
+// Если сервер открыт в сеть (HOST=0.0.0.0), проверка отключается.
+app.use('/api', (req, res, next) => {
+    if (HOST !== '127.0.0.1' && HOST !== 'localhost') return next();
+    const hostname = String(req.headers.host || '').replace(/:\d+$/, '').replace(/^\[|\]$/g, '');
+    if (['localhost', '127.0.0.1', '::1'].includes(hostname)) return next();
+    res.status(403).json({ error: 'Forbidden host', success: false });
+});
+
 app.use(express.json({ limit: '10mb' }));
 app.use('/films_and_serials', express.static(FILMS_DIR)); // Картинки фильмов из папки данных
 app.use(express.static(__dirname)); // Обслуживание статических файлов (не зависит от текущей папки)
@@ -160,26 +174,29 @@ async function getNextId() {
     return ids.length > 0 ? Math.max(...ids) + 1 : 1;
 }
 
+// Все карточки коллекции
+async function listFilms() {
+    await ensureDir(FILMS_DIR);
+    const files = await fs.readdir(FILMS_DIR);
+    const filmIds = files.filter(f => /^\d+$/.test(f));
+
+    return Promise.all(
+        filmIds.map(async (id) => {
+            try {
+                const dataPath = path.join(FILMS_DIR, id, 'data.json');
+                const data = await fs.readFile(dataPath, 'utf8');
+                return { id, ...JSON.parse(data) };
+            } catch {
+                return { id, title: `Фильм ${id}`, rating: 0 };
+            }
+        })
+    );
+}
+
 // API: Получить все карточки
 app.get('/api/films', async (req, res) => {
     try {
-        await ensureDir(FILMS_DIR);
-        const files = await fs.readdir(FILMS_DIR);
-        const filmIds = files.filter(f => /^\d+$/.test(f));
-        
-        const films = await Promise.all(
-            filmIds.map(async (id) => {
-                try {
-                    const dataPath = path.join(FILMS_DIR, id, 'data.json');
-                    const data = await fs.readFile(dataPath, 'utf8');
-                    return { id, ...JSON.parse(data) };
-                } catch {
-                    return { id, title: `Фильм ${id}`, rating: 0 };
-                }
-            })
-        );
-        
-        res.json(films);
+        res.json(await listFilms());
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
@@ -224,87 +241,104 @@ async function getFiles(dir) {
     }
 }
 
+// Создать карточку. Известные поля получают значения по умолчанию,
+// дополнительные (рейтинги, ссылки, kinopoiskId...) сохраняются как есть.
+async function createFilm(fields = {}) {
+    // ID выбирается и папка создаётся атомарно относительно других запросов
+    const id = await serialized(async () => {
+        const nextId = await getNextId();
+        await fs.mkdir(path.join(FILMS_DIR, nextId.toString()));
+        return nextId;
+    });
+    const filmDir = path.join(FILMS_DIR, id.toString());
+    
+    // Создать структуру папок
+    await ensureDir(path.join(filmDir, 'banner'));
+    await ensureDir(path.join(filmDir, 'preview', 'preview1'));
+    await ensureDir(path.join(filmDir, 'preview', 'preview2'));
+    await ensureDir(path.join(filmDir, 'preview', 'preview3'));
+    
+    // Создать базовый data.json
+    const initialData = {
+        ...fields,
+        title: fields.title || `Фильм ${id}`,
+        rating: fields.rating || 0,
+        year: fields.year || '',
+        country: fields.country || '',
+        director: fields.director || '',
+        cast: fields.cast || '',
+        mainCategory: fields.mainCategory || '',
+        subCategories: fields.subCategories || [],
+        filmDescription: fields.filmDescription || '',
+        personalReview: fields.personalReview || '',
+        contentType: fields.contentType || '',
+        watchStatus: fields.watchStatus || '',
+        lastEpisode: fields.lastEpisode || '',
+        createdAt: new Date().toISOString()
+    };
+    delete initialData.id;
+    
+    await writeJsonAtomic(path.join(filmDir, 'data.json'), initialData);
+    
+    // Создать HTML файл
+    const htmlContent = await generateFilmHTML(id, initialData);
+    await fs.writeFile(path.join(filmDir, 'index.html'), htmlContent);
+    
+    return { id, ...initialData };
+}
+
 // API: Создать новую карточку
 app.post('/api/films', async (req, res) => {
     try {
-        // ID выбирается и папка создаётся атомарно относительно других запросов
-        const id = await serialized(async () => {
-            const nextId = await getNextId();
-            await fs.mkdir(path.join(FILMS_DIR, nextId.toString()));
-            return nextId;
-        });
-        const filmDir = path.join(FILMS_DIR, id.toString());
-        
-        // Создать структуру папок
-        await ensureDir(path.join(filmDir, 'banner'));
-        await ensureDir(path.join(filmDir, 'preview', 'preview1'));
-        await ensureDir(path.join(filmDir, 'preview', 'preview2'));
-        await ensureDir(path.join(filmDir, 'preview', 'preview3'));
-        
-        // Создать базовый data.json
-        const initialData = {
-            title: req.body.title || `Фильм ${id}`,
-            rating: req.body.rating || 0,
-            year: req.body.year || '',
-            country: req.body.country || '',
-            director: req.body.director || '',
-            cast: req.body.cast || '',
-            mainCategory: req.body.mainCategory || '',
-            subCategories: req.body.subCategories || [],
-            filmDescription: req.body.filmDescription || '',
-            personalReview: req.body.personalReview || '',
-            contentType: req.body.contentType || '',
-            watchStatus: req.body.watchStatus || '',
-            lastEpisode: req.body.lastEpisode || '',
-            createdAt: new Date().toISOString()
-        };
-        
-        await writeJsonAtomic(path.join(filmDir, 'data.json'), initialData);
-        
-        // Создать HTML файл
-        const htmlContent = await generateFilmHTML(id, initialData);
-        await fs.writeFile(path.join(filmDir, 'index.html'), htmlContent);
-        
-        res.json({ id, ...initialData });
+        res.json(await createFilm(req.body));
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
 });
 
+// Обновить карточку (слить поля). Возвращает null, если карточки нет.
+async function updateFilm(id, patch) {
+    id = String(id);
+    const filmDir = path.join(FILMS_DIR, id);
+    const dataPath = path.join(filmDir, 'data.json');
+
+    try {
+        await fs.access(filmDir);
+    } catch {
+        return null;
+    }
+
+    const updatedData = await serialized(async () => {
+        // Читаем существующие данные
+        let existingData = {};
+        try {
+            const data = await fs.readFile(dataPath, 'utf8');
+            existingData = JSON.parse(data);
+        } catch {}
+
+        // Объединяем с новыми данными
+        const merged = {
+            ...existingData,
+            ...patch,
+            updatedAt: new Date().toISOString()
+        };
+        delete merged.id;
+
+        await writeJsonAtomic(dataPath, merged);
+        return merged;
+    });
+
+    return { id, ...updatedData };
+}
+
 // API: Обновить карточку
 app.put('/api/films/:id', async (req, res) => {
     try {
-        const { id } = req.params;
-        const filmDir = path.join(FILMS_DIR, id);
-        const dataPath = path.join(filmDir, 'data.json');
-
-        try {
-            await fs.access(filmDir);
-        } catch {
+        const film = await updateFilm(req.params.id, req.body);
+        if (!film) {
             return res.status(404).json({ error: 'Film not found' });
         }
-
-        const updatedData = await serialized(async () => {
-            // Читаем существующие данные
-            let existingData = {};
-            try {
-                const data = await fs.readFile(dataPath, 'utf8');
-                existingData = JSON.parse(data);
-            } catch {}
-
-            // Объединяем с новыми данными
-            const merged = {
-                ...existingData,
-                ...req.body,
-                updatedAt: new Date().toISOString()
-            };
-            delete merged.id;
-
-            await writeJsonAtomic(dataPath, merged);
-            return merged;
-        });
-
-        res.json({ id, ...updatedData });
+        res.json(film);
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
@@ -363,7 +397,6 @@ function downloadImage(url, redirectCount = 0) {
             if (response.statusCode >= 300 && response.statusCode < 400 && response.headers.location) {
                 response.resume();
                 const nextUrl = new URL(response.headers.location, parsed).toString();
-                console.log(`Redirect ${response.statusCode}: ${url} -> ${nextUrl}`);
                 return downloadImage(nextUrl, redirectCount + 1)
                     .then(resolve)
                     .catch(reject);
@@ -379,7 +412,6 @@ function downloadImage(url, redirectCount = 0) {
             response.on('data', (chunk) => chunks.push(chunk));
             response.on('end', () => {
                 const buffer = Buffer.concat(chunks);
-                console.log(`Downloaded ${chunks.length} chunks, total size: ${buffer.length} bytes`);
                 resolve(buffer);
             });
             response.on('error', reject);
@@ -390,56 +422,56 @@ function downloadImage(url, redirectCount = 0) {
     });
 }
 
+// Скачать картинку по ссылке в папку карточки (баннер или превью 1–3).
+// Возвращает путь для браузера.
+async function saveRemoteImage(id, type, index, url) {
+    let uploadPath, baseName;
+    if (type === 'banner') {
+        uploadPath = path.join(FILMS_DIR, String(id), 'banner');
+        baseName = 'banner';
+    } else if (type === 'preview' && ['1', '2', '3'].includes(String(index))) {
+        uploadPath = path.join(FILMS_DIR, String(id), 'preview', `preview${index}`);
+        baseName = 'preview';
+    } else {
+        const error = new Error('Invalid type or index');
+        error.status = 400;
+        throw error;
+    }
+
+    const imageBuffer = await downloadImage(url);
+
+    // Расширение берём из ссылки, если оно похоже на картинку
+    let ext = '.webp';
+    try {
+        const fromUrl = path.extname(new URL(url).pathname).toLowerCase();
+        if (IMAGE_EXTENSIONS.includes(fromUrl)) ext = fromUrl;
+    } catch {}
+
+    await ensureDir(uploadPath);
+    await clearDirectory(uploadPath);
+    const filePath = path.join(uploadPath, baseName + ext);
+    await fs.writeFile(filePath, imageBuffer);
+    return toPublicPath(filePath);
+}
+
 // API: Скачать изображение из URL и сохранить локально
 app.post('/api/films/:id/download-image', async (req, res) => {
     const { id } = req.params;
     try {
         const { url, type, index } = req.body; // type: 'banner' или 'preview', index: 1,2,3 для превью
-        
+
         if (!url) {
-            console.error('❌ URL не указан');
             return res.status(400).json({ error: 'URL is required', success: false });
         }
-        
+
         console.log(`📥 [Film ${id}] Скачивание ${type}${index ? ` ${index}` : ''} из: ${url}`);
-        
-        // Скачиваем изображение
-        const imageBuffer = await downloadImage(url);
-        console.log(`✅ [Film ${id}] Изображение скачано, размер: ${imageBuffer.length} bytes`);
-        
-        // Определяем путь для сохранения
-        let uploadPath, filename;
-        if (type === 'banner') {
-            uploadPath = path.join(FILMS_DIR, id, 'banner');
-            filename = 'banner.webp';
-        } else if (type === 'preview' && index) {
-            uploadPath = path.join(FILMS_DIR, id, 'preview', `preview${index}`);
-            filename = 'preview.webp';
-        } else {
-            console.error('❌ Неверный тип или индекс:', { type, index });
-            return res.status(400).json({ error: 'Invalid type or index', success: false });
-        }
-        
-        console.log(`📁 [Film ${id}] Создание директории: ${uploadPath}`);
-        
-        // Создаем директорию если не существует
-        await ensureDir(uploadPath);
-        
-        // Очищаем старые файлы
-        await clearDirectory(uploadPath);
-        
-        // Сохраняем файл
-        const filePath = path.join(uploadPath, filename);
-        await fs.writeFile(filePath, imageBuffer);
-        
-        const relativePath = toPublicPath(filePath);
+        const relativePath = await saveRemoteImage(id, type, index, url);
         console.log(`💾 [Film ${id}] Изображение сохранено: ${relativePath}`);
-        
+
         res.json({ path: relativePath, success: true });
     } catch (error) {
         console.error(`❌ [Film ${id}] Ошибка скачивания изображения:`, error.message);
-        console.error('Stack:', error.stack);
-        res.status(500).json({ error: error.message, success: false });
+        res.status(error.status || 500).json({ error: error.message, success: false });
     }
 });
 
@@ -611,6 +643,209 @@ app.delete('/api/categories/:name', async (req, res) => {
     }
 });
 
+// === КИНОПОИСК ===
+
+function sendKinopoiskError(res, error) {
+    const status = error.status || 500;
+    res.status(status).json({ error: error.message, code: error.code || 'error', keySite: kinopoisk.KEY_SITE });
+}
+
+// Есть ли ключ (сам ключ браузеру не отдаём)
+app.get('/api/kinopoisk/key', (req, res) => {
+    res.json({ hasKey: Boolean(kinopoisk.getKey()), keySite: kinopoisk.KEY_SITE });
+});
+
+// Сохранить ключ: проверяется настоящим запросом к Кинопоиску
+app.post('/api/kinopoisk/key', async (req, res) => {
+    try {
+        await kinopoisk.setKey(req.body && req.body.key);
+        res.json({ success: true, hasKey: true });
+    } catch (error) {
+        sendKinopoiskError(res, error);
+    }
+});
+
+// Поиск; к результатам добавляется id карточки, если фильм уже в коллекции
+app.get('/api/kinopoisk/search', async (req, res) => {
+    const query = String(req.query.q || '').trim();
+    if (query.length < 2) return res.json({ results: [] });
+    try {
+        const [results, films] = await Promise.all([kinopoisk.search(query), listFilms()]);
+        const byKpId = new Map(films.map((f) => [kinopoisk.kpIdOf(f), f]));
+        res.json({
+            results: results.map((r) => {
+                const film = byKpId.get(String(r.kpId));
+                return { ...r, filmId: film ? film.id : null, watchStatus: film ? film.watchStatus || '' : null };
+            })
+        });
+    } catch (error) {
+        sendKinopoiskError(res, error);
+    }
+});
+
+// Сырые запросы для страницы редактирования (белый список путей)
+app.get('/api/kinopoisk/raw/*', async (req, res) => {
+    try {
+        const query = req.originalUrl.split('?')[1];
+        res.json(await kinopoisk.raw(req.params[0] + (query ? `?${query}` : '')));
+    } catch (error) {
+        sendKinopoiskError(res, error);
+    }
+});
+
+async function findFilmByKpId(kpId) {
+    const films = await listFilms();
+    return films.find((f) => kinopoisk.kpIdOf(f) === String(kpId)) || null;
+}
+
+// Импорт карточки с Кинопоиска: все поля + постер и кадры локально.
+// Повторный импорт того же фильма возвращает существующую карточку.
+const importsInFlight = new Map();
+function importFromKinopoisk(kpId, extra = {}, { light = false } = {}) {
+    const key = String(kpId);
+    if (importsInFlight.has(key)) return importsInFlight.get(key);
+
+    const job = (async () => {
+        const existing = await findFilmByKpId(key);
+        if (existing) return { film: existing, created: false };
+
+        const card = await kinopoisk.getFilmCard(key, { light });
+        const film = await createFilm({ ...card.film, ...extra });
+
+        const images = {};
+        if (card.posterUrl) {
+            images.bannerUrl = await saveRemoteImage(film.id, 'banner', null, card.posterUrl).catch(() => null);
+        }
+        const previews = await Promise.all(
+            [0, 1, 2].map((i) => card.stillUrls[i]
+                ? saveRemoteImage(film.id, 'preview', i + 1, card.stillUrls[i]).catch(() => null)
+                : null)
+        );
+        images.previewUrls = previews;
+
+        return { film: await updateFilm(film.id, images), created: true };
+    })().finally(() => importsInFlight.delete(key));
+
+    importsInFlight.set(key, job);
+    return job;
+}
+
+app.post('/api/kinopoisk/import', async (req, res) => {
+    const kpId = String((req.body && req.body.kpId) || '');
+    if (!/^\d+$/.test(kpId)) {
+        return res.status(400).json({ error: 'kpId is required', success: false });
+    }
+    const allowedStatus = ['watched', 'watching', 'in-progress'];
+    const extra = {};
+    if (allowedStatus.includes(req.body.watchStatus)) extra.watchStatus = req.body.watchStatus;
+
+    try {
+        const result = await importFromKinopoisk(kpId, extra);
+        res.json({ success: true, ...result });
+    } catch (error) {
+        sendKinopoiskError(res, error);
+    }
+});
+
+// === KTW (просмотр в терминале) ===
+
+// Через общую точку входа: она же находит mpv на Windows
+const KTW_SCRIPT = path.join(__dirname, 'scripts', 'kinoteka.js');
+
+// Открыть ktw в новом окне терминала
+function launchKtwWindow(args) {
+    const node = process.execPath;
+    const opts = { detached: true, stdio: 'ignore', cwd: __dirname };
+
+    if (process.platform === 'win32') {
+        // start открывает новое окно консоли (или Windows Terminal, если он по умолчанию)
+        const cmdLine = `start "KinoTeka Watch" "${node}" "${KTW_SCRIPT}" ${args.join(' ')}`;
+        spawn('cmd.exe', ['/d', '/s', '/c', `"${cmdLine}"`], { ...opts, windowsVerbatimArguments: true }).unref();
+        return true;
+    }
+
+    const shellCmd = [node, KTW_SCRIPT, ...args].map((a) => `'${String(a).replace(/'/g, "'\\''")}'`).join(' ');
+    if (process.platform === 'darwin') {
+        const script = `tell application "Terminal" to do script "${shellCmd.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
+        spawn('osascript', ['-e', script, '-e', 'tell application "Terminal" to activate'], opts).unref();
+        return true;
+    }
+
+    // Linux: первый найденный эмулятор терминала
+    const terminals = [
+        ['x-terminal-emulator', ['-e', 'sh', '-c', shellCmd]],
+        ['gnome-terminal', ['--', 'sh', '-c', shellCmd]],
+        ['konsole', ['-e', 'sh', '-c', shellCmd]],
+        ['xfce4-terminal', ['-x', 'sh', '-c', shellCmd]],
+        ['xterm', ['-e', 'sh', '-c', shellCmd]]
+    ];
+    const pathDirs = String(process.env.PATH || '').split(path.delimiter);
+    for (const [bin, binArgs] of terminals) {
+        if (pathDirs.some((dir) => require('fs').existsSync(path.join(dir, bin)))) {
+            spawn(bin, binArgs, opts).unref();
+            return true;
+        }
+    }
+    return false;
+}
+
+app.post('/api/ktw/watch', (req, res) => {
+    const kpId = String((req.body && req.body.kpId) || '');
+    if (!/^\d+$/.test(kpId)) {
+        return res.status(400).json({ error: 'kpId is required', success: false });
+    }
+    if (process.env.KINOTEKA_NO_LAUNCH === '1') {
+        return res.json({ success: true, launched: false, dryRun: true });
+    }
+    try {
+        const launched = launchKtwWindow(['watch', kpId]);
+        if (!launched) {
+            return res.status(501).json({ error: 'Не нашёл терминал. Запустите вручную: ktw ' + kpId, success: false });
+        }
+        res.json({ success: true, launched: true });
+    } catch (error) {
+        res.status(500).json({ error: error.message, success: false });
+    }
+});
+
+// Синхронизация истории ktw с коллекцией
+const ktwSync = createKtwSync({
+    dataDir: DATA_DIR,
+    listFilms,
+    createFilm,
+    updateFilm,
+    importFromKinopoisk,
+    saveRemoteImage,
+    log: (message) => console.log(message)
+});
+
+// «Недавно открывали в ktw» — временный список, не попадающий в коллекцию
+app.get('/api/ktw/recent', async (req, res) => {
+    try {
+        res.json({ items: await ktwSync.getRecent() });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.delete('/api/ktw/recent/:kpId', async (req, res) => {
+    if (!/^\d+$/.test(req.params.kpId)) {
+        return res.status(400).json({ error: 'Invalid id', success: false });
+    }
+    try {
+        await ktwSync.dismissRecent(req.params.kpId);
+        res.json({ success: true });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Синхронизировать сейчас (сервер и сам следит за историей ktw)
+app.post('/api/ktw/sync', async (req, res) => {
+    const result = await ktwSync.syncNow();
+    res.status(result && result.error ? 500 : 200).json({ success: !(result && result.error), ...result });
+});
+
 // === НАСТРОЙКИ ТЕМЫ ===
 
 app.get('/api/settings', async (req, res) => {
@@ -659,12 +894,18 @@ async function start(port = PORT, host = HOST) {
     await ensureDir(FILMS_DIR);
     await ensureDir(CATEGORIES_DIR);
 
+    if (process.env.KINOTEKA_NO_SYNC !== '1') {
+        ktwSync.start();
+    }
+
     const server = app.listen(port, host, () => {
         console.log(`Сервер запущен на http://localhost:${server.address().port}`);
         if (DATA_DIR !== __dirname) {
             console.log(`Папка данных: ${DATA_DIR}`);
         }
     });
+
+    server.on('close', () => ktwSync.stop());
 
     server.on('error', (err) => {
         if (err.code === 'EADDRINUSE') {
@@ -683,5 +924,5 @@ if (require.main === module) {
     start();
 }
 
-module.exports = { app, start };
+module.exports = { app, start, listFilms, createFilm, updateFilm, importFromKinopoisk, ktwSync };
 

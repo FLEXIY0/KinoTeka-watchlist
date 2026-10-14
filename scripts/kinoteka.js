@@ -1,0 +1,98 @@
+#!/usr/bin/env node
+/**
+ * Команда ktw — единая точка входа КиноТеки.
+ *
+ *   ktw                  коллекция: сервер + интерфейс в терминале + браузер
+ *   ktw watch            плеер ktw (поиск, история просмотров)
+ *   ktw <запрос|id> ...  плеер ktw сразу с фильмом (все флаги ktw работают)
+ *   ktw update           обновить КиноТеку
+ *   ktw help             справка
+ */
+
+const fs = require('fs');
+const path = require('path');
+const { spawnSync } = require('child_process');
+
+const ROOT = path.join(__dirname, '..');
+const KTW = path.join(ROOT, 'ktw', 'ktw.js');
+const LAUNCHER = path.join(__dirname, 'app_launcher.js');
+const INSTALL_CMD = 'irm https://raw.githubusercontent.com/FLEXIY0/KinoTeka-watchlist/main/install.ps1 | iex';
+
+const args = process.argv.slice(2);
+const first = (args[0] || '').toLowerCase();
+
+// Установлено через install.ps1 (без git) — обновляемся им же
+function isInstallerSetup() {
+    return fs.existsSync(path.join(ROOT, '.kinoteka-version')) && !fs.existsSync(path.join(ROOT, '.git'));
+}
+
+// На Windows mpv после установки через winget/scoop не всегда сразу в PATH
+// (особенно в уже открытом окне). Ищем его в типичных местах и добавляем.
+function ensureMpvOnPath() {
+    if (process.platform !== 'win32') return;
+    const dirs = String(process.env.PATH || '').split(path.delimiter);
+    if (dirs.some((dir) => dir && fs.existsSync(path.join(dir, 'mpv.exe')))) return;
+
+    const local = process.env.LOCALAPPDATA || '';
+    const candidates = [
+        path.join(local, 'Microsoft', 'WinGet', 'Links'),
+        path.join(process.env.USERPROFILE || '', 'scoop', 'shims'),
+        path.join(process.env.ProgramFiles || 'C:\\Program Files', 'mpv'),
+        path.join(process.env['ProgramFiles(x86)'] || 'C:\\Program Files (x86)', 'mpv')
+    ];
+    try {
+        const packages = path.join(local, 'Microsoft', 'WinGet', 'Packages');
+        for (const name of fs.readdirSync(packages)) {
+            if (name.toLowerCase().startsWith('shinchiro.mpv')) candidates.push(path.join(packages, name));
+        }
+    } catch {}
+
+    const found = candidates.find((dir) => fs.existsSync(path.join(dir, 'mpv.exe')));
+    if (found) process.env.PATH = found + path.delimiter + process.env.PATH;
+}
+
+function runModule(file, moduleArgs) {
+    process.argv = [process.argv[0], file, ...moduleArgs];
+    require(file);
+}
+
+function installerUpdate() {
+    console.log('Обновляю КиноТеку…');
+    // Запускаем из папки установки, а не приложения: папку приложения установщик заменяет
+    const home = path.join(ROOT, '..');
+    const result = spawnSync('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', INSTALL_CMD], {
+        stdio: 'inherit',
+        cwd: home,
+        env: { ...process.env, KINOTEKA_NO_START: '1', KINOTEKA_HOME: process.env.KINOTEKA_HOME || home }
+    });
+    process.exit(result.status === null ? 1 : result.status);
+}
+
+function help() {
+    console.log([
+        'КиноТека — коллекция фильмов и плеер ktw',
+        '',
+        '  ktw                  открыть коллекцию (сервер, браузер, интерфейс в терминале)',
+        '  ktw watch            плеер ktw: поиск и история просмотров',
+        '  ktw <название|id>    сразу открыть фильм в плеере, например: ktw матрица',
+        '  ktw update           обновить КиноТеку (фильмы и история сохраняются)',
+        '',
+        'Флаги плеера: ktw watch --help'
+    ].join('\n'));
+}
+
+ensureMpvOnPath();
+
+if (!args.length || ['list', 'app', 'список'].includes(first)) {
+    runModule(LAUNCHER, args.slice(1));
+} else if (['help', '--help', '-h', 'помощь'].includes(first)) {
+    help();
+} else if (['update', '--update', '-u', 'обновить'].includes(first) && process.platform === 'win32' && isInstallerSetup()) {
+    installerUpdate();
+} else if (['update', 'обновить'].includes(first)) {
+    runModule(KTW, ['--update']);
+} else if (['watch', 'смотреть', 'w'].includes(first)) {
+    runModule(KTW, args.slice(1));
+} else {
+    runModule(KTW, args);
+}

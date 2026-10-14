@@ -10,6 +10,8 @@ const http = require('node:http');
 
 const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kinoteka-test-'));
 process.env.KINOTEKA_DATA_DIR = dataDir;
+process.env.XDG_CONFIG_HOME = path.join(dataDir, 'config');
+process.env.KINOPOISK_API_KEY = '';
 
 const { start } = require('../server');
 

@@ -23,6 +23,9 @@ jobs:
 
   # Проверяет команду установки ровно так, как её запускает пользователь:
   # irm https://raw.githubusercontent.com/.../install.ps1 | iex
+  # Папка установки — с кириллицей и пробелом, как у C:\Users\Иван Петров
+  # (имя собирается из кодов символов: Windows PowerShell 5.1 читает скрипт
+  # шага не в UTF-8, и кириллица прямо в нём превратилась бы в мусор)
   install-windows:
     name: install.ps1 / ${{ matrix.shell }}
     runs-on: windows-latest
@@ -35,33 +38,48 @@ jobs:
         shell: ${{ matrix.shell }}
     env:
       KINOTEKA_REF: ${{ github.event.pull_request.head.sha || github.sha }}
+      KINOTEKA_SKIP_MPV: '1'
     steps:
       - name: Первая установка (без системного Node — качается портативный)
         run: |
-          $env:KINOTEKA_HOME = Join-Path $env:RUNNER_TEMP 'KinoTeka'
+          $env:KINOTEKA_HOME = Join-Path $env:RUNNER_TEMP ((-join [char[]](0x041A,0x0438,0x043D,0x043E,0x0442,0x0435,0x043A,0x0430)) + ' Test')
           $env:KINOTEKA_NO_START = '1'
           $env:Path = ($env:Path -split ';' | Where-Object { $_ -and -not (Test-Path (Join-Path $_ 'node.exe')) }) -join ';'
           if (Get-Command node -ErrorAction SilentlyContinue) { throw 'system node is still on PATH' }
 
           irm "https://raw.githubusercontent.com/${{ github.repository }}/$env:KINOTEKA_REF/install.ps1" | iex
 
-          foreach ($p in 'node\node.exe', 'app\server.js', 'app\node_modules\express', 'app\.kinoteka-version') {
+          foreach ($p in 'node\node.exe', 'app\server.js', 'app\node_modules\express', 'app\node_modules\figlet', 'app\.kinoteka-version', 'bin\ktw.cmd') {
             if (-not (Test-Path (Join-Path $env:KINOTEKA_HOME $p))) { throw "missing $p" }
           }
           if (Test-Path (Join-Path $env:KINOTEKA_HOME 'app\assets\images\demo.gif')) { throw 'demo.gif should not be downloaded' }
 
+          $userPath = (Get-Item 'HKCU:\Environment').GetValue('Path', '', 'DoNotExpandEnvironmentNames')
+          if (($userPath -split ';')[0] -ne (Join-Path $env:KINOTEKA_HOME 'bin')) { throw "bin is not first in user PATH: $userPath" }
+
+      - name: Команда ktw работает
+        run: |
+          $env:KINOTEKA_HOME = Join-Path $env:RUNNER_TEMP ((-join [char[]](0x041A,0x0438,0x043D,0x043E,0x0442,0x0435,0x043A,0x0430)) + ' Test')
+          $ktw = Join-Path $env:KINOTEKA_HOME 'bin\ktw.cmd'
+          $help = & $ktw help | Out-String
+          if ($help -notmatch 'ktw watch') { throw "unexpected help: $help" }
+          # Windows PowerShell 5.1 при Stop считает любой stderr внешней программы ошибкой
+          $ErrorActionPreference = 'Continue'
+          $version = & $ktw --version 2>&1 | Out-String
+          if ($version -notmatch $env:KINOTEKA_REF.Substring(0, 7)) { throw "unexpected version: $version" }
+          Write-Host $version
+
       - name: Повторный запуск (уже установлено)
         run: |
-          $env:KINOTEKA_HOME = Join-Path $env:RUNNER_TEMP 'KinoTeka'
+          $env:KINOTEKA_HOME = Join-Path $env:RUNNER_TEMP ((-join [char[]](0x041A,0x0438,0x043D,0x043E,0x0442,0x0435,0x043A,0x0430)) + ' Test')
           $env:KINOTEKA_NO_START = '1'
           irm "https://raw.githubusercontent.com/${{ github.repository }}/$env:KINOTEKA_REF/install.ps1" | iex
 
-      - name: Запуск и проверка приложения
+      - name: Запуск коллекции командой ktw
         run: |
-          $env:KINOTEKA_HOME = Join-Path $env:RUNNER_TEMP 'KinoTeka'
-          $shellExe = (Get-Process -Id $PID).Path
-          $command = "irm 'https://raw.githubusercontent.com/${{ github.repository }}/$env:KINOTEKA_REF/install.ps1' | iex"
-          $proc = Start-Process -FilePath $shellExe -ArgumentList '-NoProfile', '-Command', $command -PassThru
+          $env:KINOTEKA_HOME = Join-Path $env:RUNNER_TEMP ((-join [char[]](0x041A,0x0438,0x043D,0x043E,0x0442,0x0435,0x043A,0x0430)) + ' Test')
+          $ktw = Join-Path $env:KINOTEKA_HOME 'bin\ktw.cmd'
+          $proc = Start-Process -FilePath $ktw -PassThru
 
           try {
             $ok = $false
@@ -79,7 +97,7 @@ jobs:
 
             $film = Invoke-RestMethod -Uri 'http://127.0.0.1:3000/api/films' -Method Post -ContentType 'application/json' -Body '{"title":"Test"}'
             $dataFile = Join-Path $env:KINOTEKA_HOME "data\films_and_serials\$($film.id)\data.json"
-            if (-not (Test-Path $dataFile)) { throw "film was not saved to data dir: $dataFile" }
+            if (-not (Test-Path -LiteralPath $dataFile)) { throw "film was not saved to data dir: $dataFile" }
             Write-Host "OK: film $($film.id) saved to $dataFile"
           } finally {
             taskkill /PID $proc.Id /T /F | Out-Null
