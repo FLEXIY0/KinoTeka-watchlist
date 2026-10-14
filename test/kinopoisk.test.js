@@ -219,3 +219,17 @@ test('API отвечает только на localhost', async () => {
     assert.equal(res.statusCode, 403);
     res.resume();
 });
+
+test('категории подбираются из жанров среди существующих, новые не создаются', async () => {
+    await api('POST', '/api/categories', { name: 'Фантастика' });
+    await api('POST', '/api/categories', { name: 'Боевики' });
+    const before = (await (await api('GET', '/api/categories')).json()).length;
+
+    const { film } = await (await api('POST', '/api/kinopoisk/import', { kpId: 555 })).json();
+    assert.equal(film.mainCategory, 'Фантастика');
+    assert.deepEqual(film.subCategories, ['Боевики']);
+    assert.equal((await (await api('GET', '/api/categories')).json()).length, before);
+
+    const match = await (await api('POST', '/api/categories/match', { genres: ['документальный', 'боевик'] })).json();
+    assert.deepEqual(match, { mainCategory: 'Боевики', subCategories: [] });
+});

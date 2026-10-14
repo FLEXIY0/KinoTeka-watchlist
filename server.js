@@ -7,6 +7,7 @@ const http = require('http');
 const { spawn } = require('child_process');
 const kinopoisk = require('./lib/kinopoisk');
 const { createKtwSync } = require('./lib/ktw-sync');
+const { matchCategories } = require('./lib/categories');
 
 const app = express();
 const PORT = Number(process.env.PORT) || 3000;
@@ -586,6 +587,16 @@ app.post('/api/categories', async (req, res) => {
     }
 });
 
+// API: Подобрать категории коллекции под жанры (для страницы карточки)
+app.post('/api/categories/match', async (req, res) => {
+    try {
+        const genres = Array.isArray(req.body && req.body.genres) ? req.body.genres.map(String) : [];
+        res.json(matchCategories(genres, await getAllCategories()));
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
 // API: Обновить категорию
 app.put('/api/categories/:name', async (req, res) => {
     try {
@@ -710,7 +721,15 @@ function importFromKinopoisk(kpId, extra = {}, { light = false } = {}) {
         if (existing) return { film: existing, created: false };
 
         const card = await kinopoisk.getFilmCard(key, { light });
-        const film = await createFilm({ ...card.film, ...extra });
+
+        // Категории — из жанров, только среди уже существующих
+        const categoryFields = {};
+        if (!extra.mainCategory) {
+            const matched = matchCategories(card.film.genres, await getAllCategories());
+            if (matched.mainCategory) Object.assign(categoryFields, matched);
+        }
+
+        const film = await createFilm({ ...card.film, ...categoryFields, ...extra });
 
         const images = {};
         if (card.posterUrl) {
