@@ -14,8 +14,7 @@
     "ktw": "node ktw/ktw.js"
   },
   "bin": {
-    "ktw": "ktw/ktw.js",
-    "films-manager": "scripts/app_launcher.js"
+    "ktw": "scripts/kinoteka.js"
   },
   "pkg": {
     "assets": [

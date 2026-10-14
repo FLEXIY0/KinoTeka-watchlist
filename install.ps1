@@ -5,15 +5,18 @@
 # Что делает:
 #   1. Скачивает портативный Node.js LTS (если подходящего нет) — без прав администратора.
 #   2. Скачивает или обновляет приложение.
-#   3. Запускает КиноТеку и открывает её в браузере.
+#   3. Ставит плеер mpv через winget (для просмотра в ktw), если его нет.
+#   4. Добавляет команду ktw: дальше достаточно набрать ktw в любом терминале.
+#   5. Запускает КиноТеку и открывает её в браузере.
 #
 # Всё ставится в %LOCALAPPDATA%\KinoTeka. Ваши фильмы лежат в ...\KinoTeka\data
-# и при обновлении не трогаются. Чтобы запустить снова или обновиться — та же команда.
+# и при обновлении не трогаются. Обновиться: ktw update (или эта же команда).
 #
 # Настройки через переменные окружения (для тестов и опытных пользователей):
 #   KINOTEKA_HOME      — куда ставить (по умолчанию %LOCALAPPDATA%\KinoTeka)
 #   KINOTEKA_REF       — ветка/тег/коммит (по умолчанию main)
 #   KINOTEKA_NO_START  — 1: только установить, не запускать
+#   KINOTEKA_SKIP_MPV  — 1: не ставить mpv
 
 & {
     $ErrorActionPreference = 'Stop'
@@ -164,10 +167,66 @@
         throw 'Не удалось скачать КиноТеку: нет связи с GitHub'
     }
 
-    # ── 3. Запуск ───────────────────────────────────────────────────────────
+    # ── 3. Плеер mpv (для просмотра в ktw) ─────────────────────────────────
+    $mpvKnown = (Get-Command mpv -ErrorAction SilentlyContinue) -or
+        (Test-Path (Join-Path $env:LOCALAPPDATA 'Microsoft\WinGet\Links\mpv.exe')) -or
+        (Get-ChildItem (Join-Path $env:LOCALAPPDATA 'Microsoft\WinGet\Packages') -Filter 'shinchiro.mpv*' -Directory -ErrorAction SilentlyContinue)
+    if (-not $mpvKnown -and $env:KINOTEKA_SKIP_MPV -ne '1') {
+        if (Get-Command winget -ErrorAction SilentlyContinue) {
+            Step 'Ставлю видеоплеер mpv (нужен для просмотра в ktw)...'
+            try {
+                winget install --id shinchiro.mpv -e --silent --accept-package-agreements --accept-source-agreements --disable-interactivity | Out-Host
+            } catch {
+                Info 'mpv поставить не вышло — коллекция работает и без него'
+            }
+        } else {
+            Info 'Для просмотра в ktw нужен mpv: https://mpv.io/installation/ (коллекция работает и без него)'
+        }
+    }
+
+    # ── 4. Команда ktw ──────────────────────────────────────────────────────
+    # Внутри только пути относительно самой команды: cmd читает .cmd в
+    # кодировке OEM, и абсолютный путь с кириллицей (C:\Users\Иван) сломался бы
+    $BinDir = Join-Path $Home_ 'bin'
+    New-Item -ItemType Directory -Force -Path $BinDir | Out-Null
+    $shim = @(
+        '@echo off',
+        'setlocal',
+        'set "KT_HOME=%~dp0.."',
+        'set "KINOTEKA_HOME=%KT_HOME%"',
+        'set "KINOTEKA_DATA_DIR=%KT_HOME%\data"',
+        'set "PATH=%KT_HOME%\node;%PATH%"',
+        'node "%KT_HOME%\app\scripts\kinoteka.js" %*'
+    ) -join "`r`n"
+    Set-Content -Path (Join-Path $BinDir 'ktw.cmd') -Value $shim -Encoding ASCII
+
+    # Добавляем папку в PATH пользователя первой — раньше старого ktw от
+    # KinoTeka-Watch. Читаем PATH из реестра как есть, чтобы не раскрыть
+    # переменные вроде %USERPROFILE% в уже существующих путях.
+    $envKey = Get-Item 'HKCU:\Environment'
+    $userPath = $envKey.GetValue('Path', '', 'DoNotExpandEnvironmentNames')
+    $parts = @($userPath -split ';' | Where-Object { $_ -and ($_.TrimEnd('\') -ne $BinDir.TrimEnd('\')) })
+    $newPath = (@($BinDir) + $parts) -join ';'
+    if ($newPath -ne $userPath) {
+        Set-ItemProperty -Path 'HKCU:\Environment' -Name 'Path' -Value $newPath -Type ExpandString
+        # Сообщаем Windows, что окружение изменилось (новые окна увидят ktw)
+        [Environment]::SetEnvironmentVariable('KINOTEKA_ENV_REFRESH', '1', 'User')
+        [Environment]::SetEnvironmentVariable('KINOTEKA_ENV_REFRESH', $null, 'User')
+    }
+    if (-not (($env:Path -split ';') -contains $BinDir)) { $env:Path = "$BinDir;$env:Path" }
+
+    $oldKtw = Join-Path $env:USERPROFILE '.local\bin'
+    if (Get-ChildItem $oldKtw -Filter 'ktw*' -ErrorAction SilentlyContinue) {
+        Info "Старый ktw от KinoTeka-Watch лежит в $oldKtw — новый ktw теперь стоит в PATH раньше него"
+    }
+
+    # ── 5. Запуск ───────────────────────────────────────────────────────────
     Info "Ваши данные: $DataDir"
     Write-Host ''
-    Write-Host '  Чтобы запустить в следующий раз — вставьте эту же команду.' -ForegroundColor Yellow
+    Write-Host '  Дальше просто наберите ktw в любом терминале:' -ForegroundColor Yellow
+    Write-Host '    ktw            — коллекция (откроется в браузере)' -ForegroundColor Yellow
+    Write-Host '    ktw матрица    — сразу смотреть в плеере ktw' -ForegroundColor Yellow
+    Write-Host '    ktw update     — обновиться' -ForegroundColor Yellow
     Write-Host ''
 
     if ($env:KINOTEKA_NO_START -eq '1') { return }

@@ -17,6 +17,7 @@ const readline = require('readline');
 
 const ROOT_DIR = path.join(__dirname, '..');
 const SERVER_FILE = path.join(ROOT_DIR, 'server.js');
+const KTW_FILE = path.join(ROOT_DIR, 'scripts', 'kinoteka.js');
 const DEFAULT_PORT = Number(process.env.PORT) || 3000;
 const PORT_ATTEMPTS = 10;
 const MAX_LOG_LINES = 300;
@@ -33,7 +34,8 @@ const state = {
     logs: [],
     child: null,
     stopping: false,
-    openedOnce: false
+    openedOnce: false,
+    suspended: false // пока в этом окне работает плеер ktw, интерфейс не рисуем
 };
 
 // ─── Утилиты ────────────────────────────────────────────────────────────────
@@ -260,7 +262,7 @@ function fit(text, width) {
 
 let renderScheduled = false;
 function render() {
-    if (!INTERACTIVE || renderScheduled) return;
+    if (!INTERACTIVE || renderScheduled || state.suspended) return;
     renderScheduled = true;
     setImmediate(() => {
         renderScheduled = false;
@@ -285,7 +287,7 @@ function draw() {
 
     const footer = [
         c.dim + line + c.reset,
-        `  ${c.bold}O${c.reset} открыть   ${c.bold}B${c.reset} в обычном браузере   ${c.bold}R${c.reset} перезапустить   ${c.bold}C${c.reset} очистить лог   ${c.bold}Q${c.reset} выход`
+        `  ${c.bold}O${c.reset} открыть   ${c.bold}W${c.reset} смотреть (ktw)   ${c.bold}B${c.reset} в браузере   ${c.bold}R${c.reset} перезапуск   ${c.bold}C${c.reset} очистить лог   ${c.bold}Q${c.reset} выход`
     ];
 
     const logHeight = height - out.length - footer.length - 1;
@@ -311,14 +313,39 @@ async function quit() {
     process.exit(0);
 }
 
-// Клавиши в английской и русской раскладке (O/щ, B/и, R/к, C/с, Q/й)
+// Клавиши в английской и русской раскладке (O/щ, W/ц, B/и, R/к, C/с, Q/й)
 const KEYS = {
     open: ['o', 'щ', 'return', 'enter'],
+    watch: ['w', 'ц'],
     browser: ['b', 'и'],
     restart: ['r', 'к'],
     clear: ['c', 'с'],
     quit: ['q', 'й', 'escape']
 };
+
+// Плеер ktw в этом же окне: интерфейс лаунчера уступает терминал, сервер
+// продолжает работать (его лог копится и будет виден после выхода из ktw)
+function runKtw() {
+    state.suspended = true;
+    process.stdout.write('\x1b[2J\x1b[H\x1b[?25h\x1b[?1049l');
+    process.stdin.setRawMode(false);
+    process.stdin.pause();
+
+    const child = spawn(process.execPath, [KTW_FILE, 'watch'], { cwd: ROOT_DIR, stdio: 'inherit' });
+    let resumed = false;
+    const resume = (error) => {
+        if (resumed) return;
+        resumed = true;
+        if (error) addLog(`Не удалось запустить ktw: ${error.message}`);
+        state.suspended = false;
+        process.stdout.write('\x1b[?1049h\x1b[?25l\x1b[2J');
+        process.stdin.setRawMode(true);
+        process.stdin.resume();
+        render();
+    };
+    child.once('error', resume);
+    child.once('exit', () => resume());
+}
 
 function setupKeyboard() {
     readline.emitKeypressEvents(process.stdin);
@@ -329,7 +356,9 @@ function setupKeyboard() {
         const name = (key.name || str || '').toLowerCase();
         const pressed = (action) => KEYS[action].includes(name) || KEYS[action].includes((str || '').toLowerCase());
 
+        if (state.suspended) return;
         if (pressed('quit')) quit();
+        else if (pressed('watch')) runKtw();
         else if (pressed('open')) openBrowser(true);
         else if (pressed('browser')) openBrowser(false);
         else if (pressed('restart')) restartServer();

@@ -397,7 +397,6 @@ function downloadImage(url, redirectCount = 0) {
             if (response.statusCode >= 300 && response.statusCode < 400 && response.headers.location) {
                 response.resume();
                 const nextUrl = new URL(response.headers.location, parsed).toString();
-                console.log(`Redirect ${response.statusCode}: ${url} -> ${nextUrl}`);
                 return downloadImage(nextUrl, redirectCount + 1)
                     .then(resolve)
                     .catch(reject);
@@ -413,7 +412,6 @@ function downloadImage(url, redirectCount = 0) {
             response.on('data', (chunk) => chunks.push(chunk));
             response.on('end', () => {
                 const buffer = Buffer.concat(chunks);
-                console.log(`Downloaded ${chunks.length} chunks, total size: ${buffer.length} bytes`);
                 resolve(buffer);
             });
             response.on('error', reject);
@@ -751,7 +749,8 @@ app.post('/api/kinopoisk/import', async (req, res) => {
 
 // === KTW (просмотр в терминале) ===
 
-const KTW_SCRIPT = path.join(__dirname, 'ktw', 'ktw.js');
+// Через общую точку входа: она же находит mpv на Windows
+const KTW_SCRIPT = path.join(__dirname, 'scripts', 'kinoteka.js');
 
 // Открыть ktw в новом окне терминала
 function launchKtwWindow(args) {
@@ -799,7 +798,7 @@ app.post('/api/ktw/watch', (req, res) => {
         return res.json({ success: true, launched: false, dryRun: true });
     }
     try {
-        const launched = launchKtwWindow([kpId]);
+        const launched = launchKtwWindow(['watch', kpId]);
         if (!launched) {
             return res.status(501).json({ error: 'Не нашёл терминал. Запустите вручную: ktw ' + kpId, success: false });
         }
