@@ -1,0 +1,281 @@
+/* Выезжающий сверху поиск по Кинопоиску (главная страница) */
+
+.kp-search-trigger {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 70px;
+    z-index: 30;
+}
+
+.kp-search {
+    position: fixed;
+    top: 0;
+    left: 50%;
+    width: min(760px, calc(100vw - 32px));
+    max-height: calc(100vh - 24px);
+    display: flex;
+    flex-direction: column;
+    transform: translate(-50%, calc(-100% + 10px));
+    transition: transform 0.35s ease;
+    z-index: 40;
+}
+
+.kp-search::after {
+    /* Видимый «язычок», намекающий, что сверху что-то есть */
+    content: '';
+    display: block;
+    width: 60px;
+    height: 4px;
+    margin: 6px auto 0;
+    border-radius: 4px;
+    background: var(--border-color, #3e3e3e);
+    transition: opacity 0.2s ease;
+}
+
+.kp-search.open,
+.kp-search-trigger:hover + .kp-search,
+.kp-search:hover {
+    transform: translate(-50%, 0);
+}
+
+.kp-search.dismissed,
+.kp-search-trigger:hover + .kp-search.dismissed {
+    transform: translate(-50%, calc(-100% + 10px));
+}
+
+.kp-search.open::after,
+.kp-search:hover::after {
+    opacity: 0;
+}
+
+.kp-search-box {
+    background: var(--bg-secondary, #212121);
+    border: 2px solid var(--border-color, #3e3e3e);
+    border-top: none;
+    border-radius: 0 0 18px 18px;
+    padding: 14px 16px 12px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+}
+
+.kp-search-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.kp-search-row .material-symbols-outlined {
+    color: var(--text-tertiary, #848484);
+    font-size: 24px;
+}
+
+.kp-search-input {
+    flex: 1;
+    min-width: 0;
+    background: var(--bg-tertiary, #2a2a2a);
+    border: 2px solid transparent;
+    border-radius: 12px;
+    padding: 10px 14px;
+    color: var(--text-primary, #B8B8B8);
+    font: inherit;
+    font-size: 17px;
+    outline: none;
+    transition: border-color 0.2s ease;
+}
+
+.kp-search-input:focus {
+    border-color: var(--border-hover, #4e4e4e);
+}
+
+.kp-search-input::placeholder {
+    color: var(--text-muted, #6e6e6e);
+}
+
+.kp-search-hint {
+    margin-top: 8px;
+    font-size: 13px;
+    color: var(--text-tertiary, #848484);
+    line-height: 1.4;
+}
+
+.kp-search-hint a {
+    color: var(--text-primary, #B8B8B8);
+}
+
+.kp-search-hint.error {
+    color: #e57373;
+}
+
+.kp-search-hint.success {
+    color: #81c784;
+}
+
+.kp-results {
+    margin-top: 10px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    min-height: 0;
+}
+
+.kp-results:empty {
+    display: none;
+}
+
+.kp-section-title {
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-muted, #6e6e6e);
+    margin: 4px 2px 0;
+}
+
+/* Карточка результата: картинка | описание + рейтинг + действия */
+.kp-card {
+    display: flex;
+    gap: 16px;
+    padding: 10px;
+    border-radius: 14px;
+    background: var(--bg-tertiary, #2a2a2a);
+    border: 2px solid transparent;
+    transition: border-color 0.2s ease;
+}
+
+.kp-card:hover,
+.kp-card.active {
+    border-color: var(--border-hover, #4e4e4e);
+}
+
+.kp-card-poster {
+    flex: 0 0 96px;
+    height: 140px;
+    border-radius: 10px;
+    background: var(--bg-accent, #3e3e3e) center / cover no-repeat;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-muted, #6e6e6e);
+}
+
+.kp-card-body {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.kp-card-title {
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--text-primary, #B8B8B8);
+}
+
+.kp-card-meta {
+    font-size: 13px;
+    color: var(--text-tertiary, #848484);
+}
+
+.kp-card-desc {
+    font-size: 14px;
+    color: var(--text-secondary, #9E9E9E);
+    line-height: 1.4;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.kp-card-bottom {
+    margin-top: auto;
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.kp-rating {
+    padding: 5px 12px;
+    border-radius: 8px;
+    border: 2px solid var(--border-color, #3e3e3e);
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-primary, #B8B8B8);
+}
+
+.kp-rating.high { border-color: #4caf50; }
+.kp-rating.mid { border-color: #9e9e9e; }
+.kp-rating.low { border-color: #e57373; }
+
+.kp-card-actions {
+    margin-left: auto;
+    display: flex;
+    gap: 8px;
+}
+
+.kp-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 7px 14px;
+    border-radius: 10px;
+    border: none;
+    background: var(--button-bg, #3e3e3e);
+    color: var(--button-text, #9E9E9E);
+    font: inherit;
+    font-size: 14px;
+    cursor: pointer;
+    text-decoration: none;
+    transition: background 0.2s ease, color 0.2s ease;
+}
+
+.kp-btn:hover {
+    background: var(--button-bg-hover, #4e4e4e);
+    color: var(--button-text-hover, #ffffff);
+}
+
+.kp-btn:disabled {
+    opacity: 0.6;
+    cursor: default;
+}
+
+.kp-btn .material-symbols-outlined {
+    font-size: 18px;
+}
+
+.kp-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.kp-chip {
+    padding: 6px 12px;
+    border-radius: 999px;
+    background: var(--bg-tertiary, #2a2a2a);
+    color: var(--text-secondary, #9E9E9E);
+    font-size: 13px;
+    cursor: pointer;
+    border: 1px solid var(--border-color, #3e3e3e);
+}
+
+.kp-chip:hover {
+    color: var(--text-hover, #ffffff);
+    border-color: var(--border-hover, #4e4e4e);
+}
+
+@media (max-width: 600px) {
+    .kp-card-poster {
+        flex-basis: 72px;
+        height: 106px;
+    }
+
+    .kp-card-actions {
+        margin-left: 0;
+    }
+}
