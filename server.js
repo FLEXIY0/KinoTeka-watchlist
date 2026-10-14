@@ -12,6 +12,12 @@ const { createPlayers } = require('./lib/players');
 const ktwHistory = require('./ktw/lib/history');
 
 const app = express();
+
+// Логи сервера. KINOTEKA_QUIET=1 (в тестах) — без вывода: тест-раннер Node
+// использует stdout для своих сообщений, и посторонний вывод иногда их ломает
+const quiet = process.env.KINOTEKA_QUIET === '1';
+const log = quiet ? () => {} : (...args) => console.log(...args);
+const logError = quiet ? () => {} : (...args) => console.error(...args);
 const PORT = Number(process.env.PORT) || 3000;
 // По умолчанию слушаем только localhost, чтобы API не было доступно из сети.
 // Для доступа с других устройств: HOST=0.0.0.0 npm start
@@ -467,13 +473,13 @@ app.post('/api/films/:id/download-image', async (req, res) => {
             return res.status(400).json({ error: 'URL is required', success: false });
         }
 
-        console.log(`📥 [Film ${id}] Скачивание ${type}${index ? ` ${index}` : ''} из: ${url}`);
+        log(`📥 [Film ${id}] Скачивание ${type}${index ? ` ${index}` : ''} из: ${url}`);
         const relativePath = await saveRemoteImage(id, type, index, url);
-        console.log(`💾 [Film ${id}] Изображение сохранено: ${relativePath}`);
+        log(`💾 [Film ${id}] Изображение сохранено: ${relativePath}`);
 
         res.json({ path: relativePath, success: true });
     } catch (error) {
-        console.error(`❌ [Film ${id}] Ошибка скачивания изображения:`, error.message);
+        logError(`❌ [Film ${id}] Ошибка скачивания изображения:`, error.message);
         res.status(error.status || 500).json({ error: error.message, success: false });
     }
 });
@@ -848,7 +854,7 @@ const ktwSync = createKtwSync({
     updateFilm,
     importFromKinopoisk,
     saveRemoteImage,
-    log: (message) => console.log(message)
+    log: (message) => log(message)
 });
 
 // «Недавно открывали в ktw» — временный список, не попадающий в коллекцию
@@ -894,7 +900,7 @@ app.post('/api/ktw/sync', async (req, res) => {
 const players = createPlayers({
     dataDir: DATA_DIR,
     getTitle: async (kpId) => (await getWatchInfo(kpId)).title,
-    log: (message) => console.log(message)
+    log: (message) => log(message)
 });
 
 // Виджет строит адрес от корня сайта: baseUrl + /api/players
@@ -1055,7 +1061,7 @@ app.get('/index1.html', (req, res) => {
 app.use((err, req, res, next) => {
     // Ошибки multer (например, слишком большой файл) и наши с полем status — это ошибки клиента
     const status = err.status || (err instanceof multer.MulterError ? 400 : 500);
-    console.error('❌ Ошибка запроса:', err.message);
+    logError('❌ Ошибка запроса:', err.message);
     res.status(status).json({ error: err.message, success: false });
 });
 
@@ -1069,9 +1075,9 @@ async function start(port = PORT, host = HOST) {
     }
 
     const server = app.listen(port, host, () => {
-        console.log(`Сервер запущен на http://localhost:${server.address().port}`);
+        log(`Сервер запущен на http://localhost:${server.address().port}`);
         if (DATA_DIR !== __dirname) {
-            console.log(`Папка данных: ${DATA_DIR}`);
+            log(`Папка данных: ${DATA_DIR}`);
         }
     });
 
@@ -1079,9 +1085,9 @@ async function start(port = PORT, host = HOST) {
 
     server.on('error', (err) => {
         if (err.code === 'EADDRINUSE') {
-            console.error(`❌ Порт ${PORT} уже занят. Возможно, сервер уже запущен.`);
+            logError(`❌ Порт ${PORT} уже занят. Возможно, сервер уже запущен.`);
         } else {
-            console.error('❌ Ошибка сервера:', err.message);
+            logError('❌ Ошибка сервера:', err.message);
         }
         process.exit(1);
     });
