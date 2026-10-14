@@ -104,6 +104,7 @@
     // сообщаем серверу: быстро ушли с плеера — плохо, смотрели — хорошо.
 
     let playerTypes = [];
+    let playerChoices = []; // «тип|озвучка» — что запоминаем между заходами
     const rating = { type: null, since: 0, reported: new Set() };
 
     function feedback(type, ok) {
@@ -135,7 +136,10 @@
         let restored = false;
         const typesReady = fetch('/api/players?kinopoisk=' + kpId)
             .then((r) => (r.ok ? r.json() : { data: [] }))
-            .then((d) => { playerTypes = (d.data || []).map((p) => p.type); })
+            .then((d) => {
+                playerTypes = (d.data || []).map((p) => p.type);
+                playerChoices = (d.data || []).map((p) => (p.voice ? `${p.type}|${p.voice}` : p.type));
+            })
             .catch(() => {});
 
         const observer = new MutationObserver(async () => {
@@ -145,12 +149,17 @@
             await typesReady;
 
             items.forEach((item, index) => {
-                item.addEventListener('click', () => selectPlayer(playerTypes[index]));
+                item.addEventListener('click', () => {
+                    selectPlayer(playerTypes[index]);
+                    try { localStorage.setItem(savedPlayerKey, playerChoices[index]); } catch {}
+                });
             });
 
             let saved = null;
             try { saved = localStorage.getItem(savedPlayerKey); } catch {}
-            const idx = saved ? playerTypes.indexOf(saved) : -1;
+            // Сначала та же озвучка того же плеера, иначе хотя бы тот же плеер
+            let idx = saved ? playerChoices.indexOf(saved) : -1;
+            if (idx < 0 && saved) idx = playerTypes.indexOf(saved.split('|')[0]);
             if (idx > 0 && idx < items.length) {
                 setTimeout(() => items[idx].click(), 300);
             } else {

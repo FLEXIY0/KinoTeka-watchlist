@@ -82,12 +82,32 @@ test('kinobox + свой плеер CDNVideoHub: Collaps, CDNVideoHub, Kodik …
 
     const id = nextId++;
     const { body } = await playersFor(id);
-    assert.deepEqual(types(body), ['Collaps', 'CDNVideoHub', 'Kodik', 'Turbo', 'Alloha']);
+    assert.deepEqual(types(body), ['Collaps', 'CDNVideoHub', 'CDNVideoHub', 'Kodik', 'Turbo', 'Alloha']);
 
-    const cvh = body.data[1];
-    assert.equal(cvh.iframeUrl, `${base}/play.html?kp=${id}`);
-    assert.deepEqual(cvh.translations.map((t) => t.name), ['Гоблин', 'Дубляж']);
-    assert.equal(cvh.translations[0].iframeUrl, `${base}/play.html?kp=${id}&voice=%D0%93%D0%BE%D0%B1%D0%BB%D0%B8%D0%BD`);
+    // Каждая озвучка CDNVideoHub — свой пункт меню
+    const [goblin, dub] = body.data.slice(1, 3);
+    assert.equal(goblin.iframeUrl, `${base}/play.html?kp=${id}&voice=%D0%93%D0%BE%D0%B1%D0%BB%D0%B8%D0%BD`);
+    assert.deepEqual([goblin.voice, dub.voice], ['Гоблин', 'Дубляж']);
+    assert.deepEqual(goblin.translations.map((t) => t.name), ['Гоблин · CDNVideoHub']);
+});
+
+test('озвучки kinobox-плееров — отдельные пункты меню, порядок плееров сохраняется', async () => {
+    fake.kinoboxPlayers = [
+        { type: 'Alloha', iframeUrl: 'a', translations: [
+            { name: 'LostFilm', quality: 'WEB-DL', iframeUrl: 'a?t=1' },
+            { name: 'TVShows', quality: 'WEB-DL', iframeUrl: 'a?t=2' }
+        ] },
+        { type: 'Collaps', iframeUrl: 'c', translations: [{ name: 'Пифагор', iframeUrl: 'c?t=1' }, { name: 'Без ссылки' }] },
+        { type: 'Turbo', iframeUrl: 't', translations: [{ name: null, iframeUrl: 't' }] }
+    ];
+    const { body } = await playersFor();
+    assert.deepEqual(body.data.map((p) => [p.type, p.iframeUrl, p.voice]), [
+        ['Collaps', 'c?t=1', 'Пифагор'],
+        ['Turbo', 't', undefined],
+        ['Alloha', 'a?t=1', 'LostFilm'],
+        ['Alloha', 'a?t=2', 'TVShows']
+    ]);
+    assert.equal(body.data[2].translations[0].quality, 'WEB-DL');
 });
 
 test('kinobox не дал Collaps — добавляется прямой Collaps', async () => {
