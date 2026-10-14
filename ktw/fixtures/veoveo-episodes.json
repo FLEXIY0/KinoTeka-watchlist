@@ -1,0 +1,31 @@
+[
+  {
+    "id": 1317758,
+    "title": null,
+    "originalTitle": null,
+    "description": null,
+    "m3u8MasterFilePath": null,
+    "order": 0,
+    "season": {
+      "id": 254363,
+      "order": 0
+    },
+    "watchedAt": null,
+    "watchProgress": null,
+    "isCompleted": null,
+    "uploadDate": 1755116490.0,
+    "episodeVariants": [
+      {
+        "id": 57427,
+        "episodeId": 1317758,
+        "duration": 8225,
+        "filepath": "https://tazaromikaz.link/content-router/r/sig/anon/test-request-id/movies/files/episodes/63126/testpath/334.m3u8?pl=TESTSIG",
+        "previewImageFilepath": "https://video.mvapspdmpg.com/movies/files/episodes-posters/63126.jpg",
+        "title": "Оригинал",
+        "dubbingStudioId": null,
+        "streamQuality": null,
+        "hasAdv": null
+      }
+    ]
+  }
+]

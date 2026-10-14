@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<!--
+  Страница плеера Collaps в том виде, в каком её отдаёт балансер.
+  Структура по документации балансера: source.hls указывает на
+  {file}.mp4/master.m3u8, а audio.order — это номера рендиций index-aN.m3u8,
+  то есть порядковые номера дорожек для mpv --aid.
+-->
+<html>
+<head><title>Player</title></head>
+<body>
+<div id="player"></div>
+<script>
+    makePlayer({
+        title: "Тестовый фильм",
+        source: {
+            hls: "https://cdn.example.com/12_04_25/abcdef/TESTFILE.mp4/master.m3u8",
+            dash: "https://cdn.example.com/12_04_25/abcdef/TESTFILE.mp4/manifest.mpd",
+            duration: 7200,
+            audio: {
+                names: ["Дубляж", "Многоголосый. LostFilm", "Оригинал (ENG)"],
+                order: [1, 2, 0]
+            },
+            cc: [
+                { name: "Русские", url: "https://cdn.example.com/subs/ru.vtt" }
+            ]
+        }
+    });
+</script>
+</body>
+</html>

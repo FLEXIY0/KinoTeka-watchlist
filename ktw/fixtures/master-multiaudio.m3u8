@@ -1,0 +1,30 @@
+#EXTM3U
+#EXT-X-VERSION:4
+#EXT-X-INDEPENDENT-SEGMENTS
+
+#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID="sub",NAME="RUS #01",URI="/sig/anon/test-request-id/movies/files/episodes/63126/471328.srt/index.m3u8"
+#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID="sub",NAME="RUS #02",URI="/sig/anon/test-request-id/movies/files/episodes/63126/471331.srt/index.m3u8"
+
+
+#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="audio1080",NAME="01. Многоголосый. Jask (RUS)",DEFAULT=YES,URI="/sig/anon/test-request-id/movies/files/episodes/63126/KymmMmJF5FCImIzm2.mp4/index-a1.m3u8"
+#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="audio1080",NAME="02. Дубляж (RUS)",DEFAULT=NO,URI="/sig/anon/test-request-id/movies/files/episodes/63126/KymmMmJF5FCImIzm2.mp4/index-a2.m3u8"
+#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="audio1080",NAME="03. Многоголосый (RUS)",DEFAULT=NO,URI="/sig/anon/test-request-id/movies/files/episodes/63126/KymmMmJF5FCImIzm2.mp4/index-a3.m3u8"
+#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="audio720",NAME="01. Многоголосый. Jask (RUS)",DEFAULT=YES,URI="/sig/anon/test-request-id/movies/files/episodes/63126/vfD9MuKEC4t09dzIO.mp4/index-a1.m3u8"
+#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="audio720",NAME="02. Дубляж (RUS)",DEFAULT=NO,URI="/sig/anon/test-request-id/movies/files/episodes/63126/vfD9MuKEC4t09dzIO.mp4/index-a2.m3u8"
+#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="audio720",NAME="03. Многоголосый (RUS)",DEFAULT=NO,URI="/sig/anon/test-request-id/movies/files/episodes/63126/vfD9MuKEC4t09dzIO.mp4/index-a3.m3u8"
+#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="audio480",NAME="01. Многоголосый. Jask (RUS)",DEFAULT=YES,URI="/sig/anon/test-request-id/movies/files/episodes/63126/J4y5SWV2x2CYL50aQ.mp4/index-a1.m3u8"
+#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="audio480",NAME="02. Дубляж (RUS)",DEFAULT=NO,URI="/sig/anon/test-request-id/movies/files/episodes/63126/J4y5SWV2x2CYL50aQ.mp4/index-a2.m3u8"
+#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="audio480",NAME="03. Многоголосый (RUS)",DEFAULT=NO,URI="/sig/anon/test-request-id/movies/files/episodes/63126/J4y5SWV2x2CYL50aQ.mp4/index-a3.m3u8"
+
+#EXT-X-STREAM-INF:PROGRAM-ID=1,BANDWIDTH=3575690,VIDEO-RANGE=SDR,RESOLUTION=1920x800,CODECS="avc1.640028,mp4a.40.2",FRAME-RATE=23.976,HDCP-LEVEL=NONE,AUDIO="audio1080",SUBTITLES="sub"
+/sig/anon/test-request-id/movies/files/episodes/63126/KymmMmJF5FCImIzm2.mp4/index-v1.m3u8
+#EXT-X-I-FRAME-STREAM-INF:PROGRAM-ID=1,BANDWIDTH=446961,VIDEO-RANGE=SDR,RESOLUTION=1920x800,CODECS="avc1.640028,mp4a.40.2",HDCP-LEVEL=NONE,URI="/sig/anon/test-request-id/movies/files/episodes/63126/KymmMmJF5FCImIzm2.mp4/iframes-v1.m3u8"
+
+#EXT-X-STREAM-INF:PROGRAM-ID=1,BANDWIDTH=1660089,VIDEO-RANGE=SDR,RESOLUTION=1280x534,CODECS="avc1.640028,mp4a.40.2",FRAME-RATE=23.976,HDCP-LEVEL=NONE,AUDIO="audio720",SUBTITLES="sub"
+/sig/anon/test-request-id/movies/files/episodes/63126/vfD9MuKEC4t09dzIO.mp4/index-v1.m3u8
+#EXT-X-I-FRAME-STREAM-INF:PROGRAM-ID=1,BANDWIDTH=207511,VIDEO-RANGE=SDR,RESOLUTION=1280x534,CODECS="avc1.640028,mp4a.40.2",HDCP-LEVEL=NONE,URI="/sig/anon/test-request-id/movies/files/episodes/63126/vfD9MuKEC4t09dzIO.mp4/iframes-v1.m3u8"
+
+#EXT-X-STREAM-INF:PROGRAM-ID=1,BANDWIDTH=690293,VIDEO-RANGE=SDR,RESOLUTION=720x300,CODECS="avc1.640028,mp4a.40.2",FRAME-RATE=23.976,HDCP-LEVEL=NONE,AUDIO="audio480",SUBTITLES="sub"
+/sig/anon/test-request-id/movies/files/episodes/63126/J4y5SWV2x2CYL50aQ.mp4/index-v1.m3u8
+#EXT-X-I-FRAME-STREAM-INF:PROGRAM-ID=1,BANDWIDTH=86286,VIDEO-RANGE=SDR,RESOLUTION=720x300,CODECS="avc1.640028,mp4a.40.2",HDCP-LEVEL=NONE,URI="/sig/anon/test-request-id/movies/files/episodes/63126/J4y5SWV2x2CYL50aQ.mp4/iframes-v1.m3u8"
+
