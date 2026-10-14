@@ -813,11 +813,22 @@ app.post('/api/ktw/watch', (req, res) => {
     if (!/^\d+$/.test(kpId)) {
         return res.status(400).json({ error: 'kpId is required', success: false });
     }
+    // Продолжить с места: серия и сохранённая секунда из истории ktw
+    const args = ['watch', kpId];
+    const { season, episode, resume } = req.body;
+    if (season !== undefined || episode !== undefined) {
+        if (!/^\d+$/.test(String(season)) || !/^\d+$/.test(String(episode))) {
+            return res.status(400).json({ error: 'Invalid season/episode', success: false });
+        }
+        args.push('-s', String(season), '-e', String(episode));
+    }
+    if (resume === true) args.push('--resume');
+
     if (process.env.KINOTEKA_NO_LAUNCH === '1') {
-        return res.json({ success: true, launched: false, dryRun: true });
+        return res.json({ success: true, launched: false, dryRun: true, args });
     }
     try {
-        const launched = launchKtwWindow(['watch', kpId]);
+        const launched = launchKtwWindow(args);
         if (!launched) {
             return res.status(501).json({ error: 'Не нашёл терминал. Запустите вручную: ktw ' + kpId, success: false });
         }
@@ -842,6 +853,15 @@ const ktwSync = createKtwSync({
 app.get('/api/ktw/recent', async (req, res) => {
     try {
         res.json({ items: await ktwSync.getRecent() });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Последние просмотры в ktw — для строки «продолжить» на главной
+app.get('/api/ktw/history', async (req, res) => {
+    try {
+        res.json({ items: await ktwSync.getHistory(6) });
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
