@@ -57,6 +57,8 @@ function detectRefusal(status, body) {
     if (GEO_RE.test(body || '')) return 'geo';
     if (status === 451) return 'geo';
     if (status === 410) return 'gone';
+    // Анти-бот: страница с JS-проверкой браузера, без настоящего браузера не пройти
+    if ((status === 403 || status === 200) && /\/include\/wsdk\.js|data-vm[^>]*invisible|cf-chl-|challenge-platform/i.test(body || '')) return 'challenge';
     if (status === 403) return 'forbidden';
     if (status === 404) return 'notfound';
     if (status >= 500) return 'server';
@@ -69,6 +71,7 @@ function refusalMessage(code, status, host) {
     switch (code) {
         case 'geo':      return host + ': контент недоступен в твоём регионе';
         case 'gone':     return host + ': балансер удалил эту раздачу (HTTP 410)';
+        case 'challenge':return host + ': защищён проверкой браузера — этот плеер открывается только в браузере (клавиша B)';
         case 'forbidden':return host + ': балансер не пустил запрос (HTTP 403) — обычно чужой Referer или регион';
         case 'notfound': return host + ': ссылка на плеер протухла (HTTP 404)';
         case 'server':   return host + ': ошибка на стороне балансера (HTTP ' + status + ')';
@@ -133,6 +136,11 @@ async function requestOk(url, options) {
     if (!res.ok) {
         var code = detectRefusal(res.status, res.body) || 'http';
         throw BalancerError(refusalMessage(code, res.status, hostOf(url)), code, { status: res.status });
+    }
+
+    // Ответ 200, но вместо плеера — короткая страница с проверкой браузера
+    if (res.status === 200 && res.body.length < 5000 && detectRefusal(200, res.body) === 'challenge') {
+        throw BalancerError(refusalMessage('challenge', 200, hostOf(url)), 'challenge', { status: 200 });
     }
 
     // Ответ 200, но внутри страница «недоступно в вашем регионе»

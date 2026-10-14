@@ -232,12 +232,16 @@ async function requestPlayers(param, value) {
 // по KP ID — резервный (и часто основной) источник, не зависящий от Kinobox.
 // Адреса взяты из рабочего плагина nb557/online_mod.js (567K+, >25 балансеров).
 
+// Порядок — как в актуальном online_mod.js: nextembed основной, kinogram запасной
 var DIRECT_COLLAPS_MIRRORS = [
+    'https://api.nextembed.ws/embed/kp/',
     'https://api.kinogram.best/embed/kp/',
     'https://api.ortified.ws/embed/kp/'
 ];
 
 var CDNVIDEOHUB_API = 'https://plapi.cdnvideohub.com/api/v1/player/sv/playlist?pub=12&aggr=kp&id=';
+// Прямые ссылки на поток по vkId (старый путь …/player/sv/{cvhId} отвечает 404)
+var CDNVIDEOHUB_VIDEO = 'https://plapi.cdnvideohub.com/api/v1/player/sv/video/';
 
 // Прямые запросы к балансерам по KP ID. Возвращает массив player-объектов
 // (формат как у normalizePlayers): source, translation, iframeUrl, direct.
@@ -280,12 +284,16 @@ async function getPlayersDirectApi(kinopoiskId) {
             try { cvhData = JSON.parse(cvhRes.body); } catch (e) {}
 
             if (cvhData && cvhData.items && cvhData.items.length > 0) {
+                cvhData.items = cvhData.items.filter(function (item) { return item.vkId; });
+            }
+
+            if (cvhData && cvhData.items && cvhData.items.length > 0) {
                 var cvhTranslations = cvhData.items.map(function (item) {
                     return {
                         id: item.cvhId,
                         name: item.voiceStudio || item.voiceType || 'Неизвестно',
                         quality: '',
-                        iframeUrl: 'https://plapi.cdnvideohub.com/api/v1/player/sv/' + item.cvhId
+                        iframeUrl: CDNVIDEOHUB_VIDEO + item.vkId
                     };
                 });
 
@@ -294,7 +302,7 @@ async function getPlayersDirectApi(kinopoiskId) {
                     translation: cvhTranslations[0].name,
                     quality: '-',
                     translations: cvhTranslations,
-                    iframeUrl: 'https://plapi.cdnvideohub.com/api/v1/player/sv/' + cvhData.items[0].cvhId,
+                    iframeUrl: CDNVIDEOHUB_VIDEO + cvhData.items[0].vkId,
                     direct: false,
                     fromDirect: true
                 });
@@ -308,7 +316,8 @@ async function getPlayersDirectApi(kinopoiskId) {
 // Ссылки на iframe живут недолго, поэтому кеш здесь короткий — четверть часа.
 // Этого хватает, чтобы переход «серия → назад → другая серия» не ходил в сеть.
 function getPlayers(kinopoiskId) {
-    return cache.through('players', 'kp:' + kinopoiskId, async function () {
+    // v2: ссылки CDNVideoHub сменились (…/sv/video/{vkId}) — старый кэш не используем
+    return cache.through('players', 'v2:kp:' + kinopoiskId, async function () {
         // Запускаем Kinobox и прямые API параллельно — быстрее и надёжнее
         var kinoboxPromise = requestPlayers('kinopoisk', kinopoiskId).catch(function () { return []; });
         var directPromise = getPlayersDirectApi(kinopoiskId).catch(function () { return []; });
@@ -359,7 +368,7 @@ function getPlayers(kinopoiskId) {
 }
 
 function getPlayersByTitle(title) {
-    return cache.through('players', 'title:' + title, function () {
+    return cache.through('players', 'v2:title:' + title, function () {
         return requestPlayers('title', title);
     });
 }

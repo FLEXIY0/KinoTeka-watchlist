@@ -28,26 +28,47 @@ function isInstallerSetup() {
 
 // На Windows mpv после установки через winget/scoop не всегда сразу в PATH
 // (особенно в уже открытом окне). Ищем его в типичных местах и добавляем.
+// winget ставит «портативные» пакеты в папку пользователя, а из окна
+// администратора — в Program Files, поэтому смотрим оба места.
+function findMpvDir() {
+    const local = process.env.LOCALAPPDATA || '';
+    const programFiles = [process.env.ProgramFiles || 'C:\\Program Files', process.env['ProgramFiles(x86)'] || 'C:\\Program Files (x86)'];
+    const wingetRoots = [path.join(local, 'Microsoft', 'WinGet'), ...programFiles.map((p) => path.join(p, 'WinGet'))];
+
+    const candidates = [
+        ...wingetRoots.map((root) => path.join(root, 'Links')),
+        path.join(process.env.USERPROFILE || '', 'scoop', 'shims'),
+        path.join(process.env.ProgramData || 'C:\\ProgramData', 'chocolatey', 'bin'),
+        ...programFiles.map((p) => path.join(p, 'mpv')),
+        ...programFiles.map((p) => path.join(p, 'MPV Player'))
+    ];
+
+    // Папка пакета winget и вложенные в неё (архив может распаковаться в подпапку)
+    for (const root of wingetRoots) {
+        const packages = path.join(root, 'Packages');
+        let names = [];
+        try { names = fs.readdirSync(packages); } catch {}
+        for (const name of names) {
+            if (!name.toLowerCase().startsWith('shinchiro.mpv')) continue;
+            const pkg = path.join(packages, name);
+            candidates.push(pkg);
+            try {
+                for (const sub of fs.readdirSync(pkg, { withFileTypes: true })) {
+                    if (sub.isDirectory()) candidates.push(path.join(pkg, sub.name));
+                }
+            } catch {}
+        }
+    }
+
+    return candidates.find((dir) => dir && fs.existsSync(path.join(dir, 'mpv.exe'))) || null;
+}
+
 function ensureMpvOnPath() {
     if (process.platform !== 'win32') return;
     const dirs = String(process.env.PATH || '').split(path.delimiter);
     if (dirs.some((dir) => dir && fs.existsSync(path.join(dir, 'mpv.exe')))) return;
 
-    const local = process.env.LOCALAPPDATA || '';
-    const candidates = [
-        path.join(local, 'Microsoft', 'WinGet', 'Links'),
-        path.join(process.env.USERPROFILE || '', 'scoop', 'shims'),
-        path.join(process.env.ProgramFiles || 'C:\\Program Files', 'mpv'),
-        path.join(process.env['ProgramFiles(x86)'] || 'C:\\Program Files (x86)', 'mpv')
-    ];
-    try {
-        const packages = path.join(local, 'Microsoft', 'WinGet', 'Packages');
-        for (const name of fs.readdirSync(packages)) {
-            if (name.toLowerCase().startsWith('shinchiro.mpv')) candidates.push(path.join(packages, name));
-        }
-    } catch {}
-
-    const found = candidates.find((dir) => fs.existsSync(path.join(dir, 'mpv.exe')));
+    const found = findMpvDir();
     if (found) process.env.PATH = found + path.delimiter + process.env.PATH;
 }
 

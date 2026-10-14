@@ -168,9 +168,13 @@
     }
 
     # ── 3. Плеер mpv (для просмотра в ktw) ─────────────────────────────────
-    $mpvKnown = (Get-Command mpv -ErrorAction SilentlyContinue) -or
-        (Test-Path (Join-Path $env:LOCALAPPDATA 'Microsoft\WinGet\Links\mpv.exe')) -or
-        (Get-ChildItem (Join-Path $env:LOCALAPPDATA 'Microsoft\WinGet\Packages') -Filter 'shinchiro.mpv*' -Directory -ErrorAction SilentlyContinue)
+    # winget ставит mpv в папку пользователя, а из окна администратора — в Program Files
+    $wingetRoots = @((Join-Path $env:LOCALAPPDATA 'Microsoft\WinGet'), (Join-Path $env:ProgramFiles 'WinGet'))
+    $mpvKnown = [bool](Get-Command mpv -ErrorAction SilentlyContinue)
+    foreach ($root in $wingetRoots) {
+        if ((Test-Path (Join-Path $root 'Links\mpv.exe')) -or
+            (Get-ChildItem (Join-Path $root 'Packages') -Filter 'shinchiro.mpv*' -Directory -ErrorAction SilentlyContinue)) { $mpvKnown = $true }
+    }
     if (-not $mpvKnown -and $env:KINOTEKA_SKIP_MPV -ne '1') {
         if (Get-Command winget -ErrorAction SilentlyContinue) {
             Step 'Ставлю видеоплеер mpv (нужен для просмотра в ktw)...'

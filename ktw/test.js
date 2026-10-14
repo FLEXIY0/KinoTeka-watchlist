@@ -323,6 +323,41 @@ async function testRouting() {
         'Turbo распознан — раньше он вообще не считался поддерживаемым');
     assert(extractors.isDirectSupported('Kodik', 'https://kodik.info/seria/1/abc/720p'), 'Kodik распознан');
     assert(!extractors.isDirectSupported('Неизвестный', 'https://example.com/embed'), 'чужой хост не помечается ⚡');
+    assert(extractors.isDirectSupported('', 'https://kurolesya.link/balancer-api/iframe?movie_id=15652'),
+        'Veoveo на новом домене узнаётся по пути /balancer-api/iframe');
+    assert(extractors.isDirectSupported('', 'https://api.nextembed.ws/embed/kp/301'), 'Collaps на nextembed распознан');
+    assert(extractors.isDirectSupported('', 'https://plapi.cdnvideohub.com/api/v1/player/sv/video/7029884672608'),
+        'CDNVideoHub по ссылке …/sv/video/{vkId} распознан');
+}
+
+async function testCdnVideoHubAndChallenge() {
+    group('CDNVideoHub и проверка браузера');
+
+    var realFetch = global.fetch;
+    global.fetch = async function (url) {
+        var body = String(url).indexOf('cdnvideohub') >= 0
+            ? JSON.stringify({ duration: 8177, sources: { hlsUrl: 'https://vd1.okcdn.ru/video.m3u8?x=1', mpegHighUrl: 'https://vd1.okcdn.ru/?type=3' } })
+            : '<html><body><script>s.src = "/include/wsdk.js?ck=1"; s["data-vm"] = JSON.stringify({ mode: "invisible" })</script></body></html>';
+        var status = String(url).indexOf('cdnvideohub') >= 0 ? 200 : 403;
+        return new Response(body, { status: status });
+    };
+
+    try {
+        var found = await extractors.extractCdnVideoHub('https://plapi.cdnvideohub.com/api/v1/player/sv/video/1');
+        assert(found.url === 'https://vd1.okcdn.ru/video.m3u8?x=1', 'CDNVideoHub отдаёт прямой HLS из sources.hlsUrl');
+        assert(found.duration === 8177, 'длительность берётся из ответа');
+
+        var error = null;
+        try {
+            await extractors.extractGeneric('https://3a41cf05.obrut.show/embed/kzM/content/x');
+        } catch (err) {
+            error = err;
+        }
+        assert(error && error.code === 'challenge', 'страница с JS-проверкой браузера опознаётся (code=challenge)');
+        assert(error && /только в браузере/.test(error.message), 'и сообщение подсказывает открыть в браузере');
+    } finally {
+        global.fetch = realFetch;
+    }
 }
 
 async function testEnglishAudioRegression() {
@@ -809,6 +844,7 @@ var SUITES = [
     ['Озвучки', testAudioMatching],
     ['mpv', testMpvArgs],
     ['Veoveo', testVeoveoOffline],
+    ['CDNVideoHub', testCdnVideoHubAndChallenge],
     ['Английская озвучка', testEnglishAudioRegression],
     ['Язык дорожки', testLanguageDetection],
     ['Честное качество', testQualityHonesty],

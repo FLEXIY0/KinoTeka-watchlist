@@ -563,11 +563,47 @@ async function extractGeneric(iframeUrl, options) {
     throw BalancerError(http.hostOf(iframeUrl) + ': в ответе нет ссылки на плейлист', 'noplaylist');
 }
 
+// ---------- CDNVideoHub (plapi.cdnvideohub.com) ----------
+//
+// Не страница плеера, а JSON с прямыми ссылками на поток с CDN VK (okcdn.ru):
+// GET /api/v1/player/sv/video/{vkId} → { duration, sources: { hlsUrl, dashUrl, … } }.
+// Ссылки привязаны к IP того, кто запросил, — поэтому берём их непосредственно
+// перед запуском mpv на этом же компьютере.
+
+async function extractCdnVideoHub(iframeUrl, options) {
+    options = options || {};
+
+    var res = await http.requestOk(iframeUrl, {
+        accept: 'application/json',
+        timeout: options.timeout || 10000
+    });
+
+    var data;
+    try {
+        data = JSON.parse(res.body);
+    } catch (err) {
+        throw BalancerError(http.hostOf(iframeUrl) + ': ответ не разобрался как JSON', 'badjson');
+    }
+
+    var sources = (data && data.sources) || {};
+    var url = sources.hlsUrl || sources.dashUrl;
+    if (!url) {
+        throw BalancerError(http.hostOf(iframeUrl) + ': в ответе нет ссылки на поток', 'noplaylist');
+    }
+
+    return baseResult('cdnvideohub', url, 'https://plapi.cdnvideohub.com/', {
+        duration: Number(data.duration) || 0
+    });
+}
+
 // ---------- маршрутизация ----------
 
+// Балансеры часто переезжают на новые домены, поэтому узнаём их и по пути
+// ссылки: /balancer-api/iframe — Veoveo, /embed/movie|kp|serial — Collaps
 var ROUTES = [
-    { name: 'collaps', test: /ortified|collaps|fprxnet|interkh|kinogram/i, run: extractCollaps },
-    { name: 'veoveo',  test: /tazaromikaz|voidboost|veoveo/i,     run: extractVeoveo },
+    { name: 'cdnvideohub', test: /cdnvideohub\.com\/api\/v1\/player\/sv\/video\//i, run: extractCdnVideoHub },
+    { name: 'collaps', test: /ortified|collaps|fprxnet|interkh|kinogram|nextembed|\/embed\/(?:movie|kp|serial)\//i, run: extractCollaps },
+    { name: 'veoveo',  test: /tazaromikaz|voidboost|veoveo|kurolesya|\/balancer-api\/iframe/i, run: extractVeoveo },
     { name: 'alloha',  test: /stravers|alloha/i,                  run: extractAlloha },
     { name: 'kodik',   test: /kodik/i,                            run: extractKodik },
     { name: 'turbo',   test: /obrut|turbo/i,                      run: extractGeneric }
@@ -672,6 +708,7 @@ module.exports = {
     extractCollaps: extractCollaps,
     extractKodik: extractKodik,
     extractAlloha: extractAlloha,
+    extractCdnVideoHub: extractCdnVideoHub,
     extractVeoveo: extractVeoveo,
     extractGeneric: extractGeneric,
     kodikDecode: kodikDecode,
