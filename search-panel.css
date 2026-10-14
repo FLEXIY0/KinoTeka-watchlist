@@ -51,35 +51,41 @@
 }
 
 .kp-search-box {
-    background: var(--bg-secondary, #212121);
-    border: 2px solid var(--border-color, #3e3e3e);
-    border-top: none;
-    border-radius: 0 0 18px 18px;
-    padding: 14px 16px 12px;
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+    /* Без общей подложки: строка поиска и карточки держатся сами по себе */
+    padding: 14px 0 10px;
     display: flex;
     flex-direction: column;
     min-height: 0;
 }
 
 .kp-search-row {
+    position: relative;
     display: flex;
     align-items: center;
-    gap: 10px;
 }
 
+/* Иконка внутри строки, в цветах темы */
 .kp-search-row .material-symbols-outlined {
-    color: var(--text-tertiary, #848484);
-    font-size: 24px;
+    position: absolute;
+    left: 14px;
+    color: var(--text-muted, #6e6e6e);
+    font-size: 22px;
+    pointer-events: none;
+    transition: color 0.2s ease;
+}
+
+.kp-search-row:focus-within .material-symbols-outlined {
+    color: var(--text-secondary, #9E9E9E);
 }
 
 .kp-search-input {
     flex: 1;
     min-width: 0;
-    background: var(--bg-tertiary, #2a2a2a);
-    border: 2px solid transparent;
-    border-radius: 12px;
-    padding: 10px 14px;
+    background: var(--bg-secondary, #212121);
+    border: 2px solid var(--border-color, #3e3e3e);
+    border-radius: 14px;
+    padding: 11px 16px 11px 46px;
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
     color: var(--text-primary, #B8B8B8);
     font: inherit;
     font-size: 17px;
@@ -96,10 +102,18 @@
 }
 
 .kp-search-hint {
+    align-self: flex-start;
     margin-top: 8px;
+    padding: 5px 12px;
+    border-radius: 10px;
+    background: var(--bg-secondary, #212121);
     font-size: 13px;
     color: var(--text-tertiary, #848484);
     line-height: 1.4;
+}
+
+.kp-search-hint:empty {
+    display: none;
 }
 
 .kp-search-hint a {
@@ -115,7 +129,10 @@
 }
 
 .kp-results {
-    margin-top: 10px;
+    /* отступы под тени карточек при прокрутке; поля компенсируют их, чтобы
+       карточки были ровно по ширине строки поиска */
+    margin: 10px -4px 0;
+    padding: 0 4px 16px;
     overflow-y: auto;
     display: flex;
     flex-direction: column;
@@ -128,6 +145,10 @@
 }
 
 .kp-section-title {
+    align-self: flex-start;
+    padding: 3px 10px;
+    border-radius: 8px;
+    background: var(--bg-secondary, #212121);
     font-size: 12px;
     text-transform: uppercase;
     letter-spacing: 0.06em;
@@ -141,8 +162,9 @@
     gap: 16px;
     padding: 10px;
     border-radius: 14px;
-    background: var(--bg-tertiary, #2a2a2a);
-    border: 2px solid transparent;
+    background: var(--bg-secondary, #212121);
+    border: 2px solid var(--border-color, #3e3e3e);
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
     transition: border-color 0.2s ease;
 }
 
@@ -155,7 +177,7 @@
     flex: 0 0 96px;
     height: 140px;
     border-radius: 10px;
-    background: var(--bg-accent, #3e3e3e) center / cover no-repeat;
+    background: var(--bg-tertiary, #2a2a2a) center / cover no-repeat;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -225,7 +247,7 @@
     padding: 7px 14px;
     border-radius: 10px;
     border: none;
-    background: var(--button-bg, #3e3e3e);
+    background: var(--bg-tertiary, #2a2a2a);
     color: var(--button-text, #9E9E9E);
     font: inherit;
     font-size: 14px;
