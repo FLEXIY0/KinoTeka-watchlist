@@ -54,37 +54,29 @@
 
   
 
-```bash
+### Windows — одной командой
 
-# Клонировать репозиторий
+Откройте **PowerShell** (Win+X → «Терминал» или «Windows PowerShell»), вставьте и нажмите Enter:
 
-git clone https://github.com/FLEXIY0/KinoTeka-watchlist.git
-
-cd KinoTeka-watchlist
-
-  
-
-# Установить зависимости
-
-npm install
-
-  
-
-# Запустить
-
-npm start
-
+```powershell
+irm https://raw.githubusercontent.com/FLEXIY0/KinoTeka-watchlist/main/install.ps1 | iex
 ```
 
-  
+Команда сама скачает портативный Node.js (без прав администратора и без установки в систему), приложение и запустит его — КиноТека откроется в браузере на `http://localhost:3000`. В окне терминала: **O** — открыть, **R** — перезапустить, **Q** — выход.
 
-**Windows:** запустите `start.bat` или `scripts\start_app.bat`  
+Чтобы запустить снова или обновиться — вставьте ту же команду. Всё лежит в `%LOCALAPPDATA%\KinoTeka`, ваши фильмы — в `%LOCALAPPDATA%\KinoTeka\data` и при обновлении не затрагиваются.
 
-**Linux/macOS:** запустите `./scripts/start.sh`
+### Из исходников (Windows / Linux / macOS)
 
-  
+Нужен [Node.js](https://nodejs.org/) 20 или новее.
 
-Приложение откроется по адресу: `http://localhost:3000`
+```bash
+git clone https://github.com/FLEXIY0/KinoTeka-watchlist.git
+cd KinoTeka-watchlist
+npm install
+npm run app      # сервер + интерфейс в терминале + браузер
+# или просто сервер: npm start
+```
 
   
 

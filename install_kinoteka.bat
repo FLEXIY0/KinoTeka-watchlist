@@ -85,8 +85,8 @@ if "%PROCESSOR_ARCHITECTURE%"=="x86" (
 echo [INFO] Архитектура системы: %ARCH%
 echo [%date% %time%] Архитектура: %ARCH% >> "%LOG_FILE%"
 
-REM URL для Node.js v22 LTS
-set "NODE_VERSION=22.22.0"
+REM URL для Node.js v24 LTS
+set "NODE_VERSION=24.22.0"
 set "NODE_URL=https://nodejs.org/dist/v%NODE_VERSION%/node-v%NODE_VERSION%-win-%ARCH%.zip"
 set "NODE_ZIP=%INSTALL_DIR%\nodejs.zip"
 

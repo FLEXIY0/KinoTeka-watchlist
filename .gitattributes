@@ -1,0 +1,11 @@
+# Батники Windows должны иметь CRLF, иначе cmd иногда неверно разбирает блоки и метки
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.sh  text eol=lf
+
+# Не включать в zip-архив, который скачивает install.ps1 (нужно только для README и разработки)
+/assets/images/demo.gif     export-ignore
+/assets/images/title_logo.png export-ignore
+/assets/images/crypto_qr.jpg export-ignore
+/.github                    export-ignore
+/test                       export-ignore
