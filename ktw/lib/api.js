@@ -176,9 +176,10 @@ function getPlayerPriority(item) {
     var s = (item.source || '').toLowerCase();
     if (s.indexOf('collaps') >= 0) return 100;
     if (s.indexOf('kodik') >= 0) return 80;
-    if (s.indexOf('alloha') >= 0) return 60;
     if (s.indexOf('veoveo') >= 0) return 50;
     if (item.direct) return 40;
+    // Alloha — последним: работает хуже остальных, оставляем как запасной
+    if (s.indexOf('alloha') >= 0) return 5;
     return 10;
 }
 

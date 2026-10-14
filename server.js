@@ -894,6 +894,17 @@ const ktwConfig = require('./ktw/lib/config');
 const KINOBOX_MIRRORS = ['https://fbphdplay.top/api/players', 'https://api.kinobox.tv/api/players'];
 const kinoboxCache = new Map();
 
+// Порядок плееров в виджете — как в ktw: Collaps и Kodik (он же сообщает
+// прогресс) первыми, Alloha последним — работает хуже остальных
+function playerPriority(type) {
+    const t = String(type || '').toLowerCase();
+    if (t.includes('collaps')) return 100;
+    if (t.includes('kodik')) return 80;
+    if (t.includes('veoveo')) return 50;
+    if (t.includes('alloha')) return 5;
+    return 10;
+}
+
 // Виджет строит адрес от корня сайта: baseUrl + /api/players
 app.get('/api/players', async (req, res) => {
     const query = req.originalUrl.split('?')[1] || '';
@@ -917,6 +928,7 @@ app.get('/api/players', async (req, res) => {
             if (!response.ok) throw new Error(`HTTP ${response.status}`);
             const data = await response.json();
             if (data && Array.isArray(data.data) && data.data.length) {
+                data.data.sort((a, b) => playerPriority(b.type) - playerPriority(a.type));
                 kinoboxCache.set(query, { at: Date.now(), data });
                 return res.json(data);
             }

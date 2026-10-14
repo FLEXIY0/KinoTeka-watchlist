@@ -18,6 +18,7 @@ var stream = require('./stream');
 var mpv = require('./mpv');
 var config = require('./config');
 var history = require('./history');
+var web = require('./web');
 var themes = require('./themes');
 var i18n = require('./i18n');
 var donatty = require('./donatty');
@@ -223,7 +224,34 @@ async function messageScreen(title, lines, hint, timeoutMs) {
     content.push('');
 
     tui.paint(tui.box(title, content, size.width, footer([hint || 'любая клавиша — назад'])));
-    await tui.readKey(timeoutMs || 0);
+    return await tui.readKey(timeoutMs || 0);
+}
+
+// B (или И в русской раскладке) на экране ошибки — открыть фильм в браузере
+function isBrowserKey(key) {
+    if (!key) return false;
+    var name = String(key.name || key.str || '').toLowerCase();
+    return name === 'b' || name === 'и';
+}
+
+// Балансер не отдал поток: предлагаем смотреть тот же фильм в браузере,
+// где плееры балансеров работают сами (страница просмотра КиноТеки)
+async function failureScreen(title, lines, film, season, episode, backHint) {
+    var key = await messageScreen(title, lines,
+        'B — смотреть в браузере  ·  любая клавиша — ' + (backHint || 'назад'));
+    if (!isBrowserKey(key)) return;
+
+    try {
+        var url = await tui.withSpinner(web.openWatchPage(film.id, season, episode), function (frame) {
+            var size = metrics();
+            return tui.box(null, ['', '  ' + style.accent(frame) + ' ' + style.muted('открываю в браузере…'), ''],
+                size.width, footer(['подождите']));
+        });
+        await messageScreen('Открыто в браузере', [url, '', 'Там можно выбрать другой плеер, если этот не работает.'],
+            'любая клавиша — назад', 4000);
+    } catch (err) {
+        await messageScreen('Не вышло открыть в браузере', [err.message], 'любая клавиша — назад');
+    }
 }
 
 // Экран подробного замера оперативной памяти (RAM Benchmark)
@@ -268,8 +296,8 @@ async function settingsScreen() {
     var langOptions = ['ru', 'en'];
     var langLabels = ['Русский (RU)', 'English (EN)'];
 
-    var playerOptions = ['', 'Collaps', 'Alloha', 'Kodik', 'Veoveo', 'Turbo'];
-    var playerLabels = ['Авто (первый доступный)', 'Collaps (прямой поток)', 'Alloha', 'Kodik', 'Veoveo', 'Turbo'];
+    var playerOptions = ['', 'Collaps', 'Kodik', 'Veoveo', 'Turbo', 'Alloha'];
+    var playerLabels = ['Авто (первый доступный)', 'Collaps (прямой поток)', 'Kodik', 'Veoveo', 'Turbo', 'Alloha (не рекомендуется)'];
 
     var qualityOptions = ['', '1080', '720', '480', 'max', 'min'];
     var qualityLabels = ['Спрашивать всегда', '1080p (FHD)', '720p (HD)', '480p (SD)', 'Максимальное (4K/FHD)', 'Минимальное (трафик)'];
@@ -1673,17 +1701,17 @@ async function playStream(film, player, translation, season, episode, options, s
         lines.push('');
         lines.push('Проверить, что именно сломалось: ktw --doctor');
 
-        await messageScreen('Плеер ' + player.source + ' не отдал поток', lines, 'любая клавиша — назад');
+        await failureScreen('Плеер ' + player.source + ' не отдал поток', lines, film, season, episode);
         return { ok: false };
     }
 
     if (!found) {
-        await messageScreen('Поток не найден', [
+        await failureScreen('Поток не найден', [
             'Плеер ' + player.source + ' не отдал поток.',
             '',
             'Попробуй другой балансер (например, Collaps)',
             'или открой Настройки по Ctrl+S.'
-        ], 'любая клавиша — к списку плееров');
+        ], film, season, episode, 'к списку плееров');
         return { ok: false };
     }
 

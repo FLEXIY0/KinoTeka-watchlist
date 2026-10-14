@@ -26,6 +26,9 @@ const fakeKinopoisk = http.createServer((req, res) => {
         res.end(JSON.stringify(body));
     };
 
+    if (url.pathname === '/kinobox/players') {
+        return json(200, { data: [{ type: 'Alloha', iframeUrl: 'a' }, { type: 'Turbo', iframeUrl: 't' }, { type: 'Kodik', iframeUrl: 'k' }, { type: 'Collaps', iframeUrl: 'c' }] });
+    }
     if (url.pathname.startsWith('/img/')) {
         res.writeHead(200, { 'Content-Type': 'image/jpeg' });
         return res.end(PNG);
@@ -232,4 +235,16 @@ test('категории подбираются из жанров среди с�
 
     const match = await (await api('POST', '/api/categories/match', { genres: ['документальный', 'боевик'] })).json();
     assert.deepEqual(match, { mainCategory: 'Боевики', subCategories: [] });
+});
+
+test('список плееров для веб-плеера: Collaps и Kodik первыми, Alloha последним', async () => {
+    process.env.KTW_KINOBOX_API = `${process.env.KINOPOISK_API_BASE}/kinobox/players`;
+    try {
+        const res = await api('GET', '/api/players?kinopoisk=301');
+        assert.equal(res.status, 200);
+        const { data } = await res.json();
+        assert.deepEqual(data.map((p) => p.type), ['Collaps', 'Kodik', 'Turbo', 'Alloha']);
+    } finally {
+        delete process.env.KTW_KINOBOX_API;
+    }
 });
