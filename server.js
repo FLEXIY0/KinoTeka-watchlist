@@ -6,6 +6,7 @@ const https = require('https');
 const http = require('http');
 const { spawn } = require('child_process');
 const kinopoisk = require('./lib/kinopoisk');
+const { createKtwSync } = require('./lib/ktw-sync');
 
 const app = express();
 const PORT = Number(process.env.PORT) || 3000;
@@ -702,7 +703,7 @@ async function findFilmByKpId(kpId) {
 // Импорт карточки с Кинопоиска: все поля + постер и кадры локально.
 // Повторный импорт того же фильма возвращает существующую карточку.
 const importsInFlight = new Map();
-function importFromKinopoisk(kpId, extra = {}) {
+function importFromKinopoisk(kpId, extra = {}, { light = false } = {}) {
     const key = String(kpId);
     if (importsInFlight.has(key)) return importsInFlight.get(key);
 
@@ -710,7 +711,7 @@ function importFromKinopoisk(kpId, extra = {}) {
         const existing = await findFilmByKpId(key);
         if (existing) return { film: existing, created: false };
 
-        const card = await kinopoisk.getFilmCard(key);
+        const card = await kinopoisk.getFilmCard(key, { light });
         const film = await createFilm({ ...card.film, ...extra });
 
         const images = {};
@@ -808,6 +809,44 @@ app.post('/api/ktw/watch', (req, res) => {
     }
 });
 
+// Синхронизация истории ktw с коллекцией
+const ktwSync = createKtwSync({
+    dataDir: DATA_DIR,
+    listFilms,
+    createFilm,
+    updateFilm,
+    importFromKinopoisk,
+    saveRemoteImage,
+    log: (message) => console.log(message)
+});
+
+// «Недавно открывали в ktw» — временный список, не попадающий в коллекцию
+app.get('/api/ktw/recent', async (req, res) => {
+    try {
+        res.json({ items: await ktwSync.getRecent() });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.delete('/api/ktw/recent/:kpId', async (req, res) => {
+    if (!/^\d+$/.test(req.params.kpId)) {
+        return res.status(400).json({ error: 'Invalid id', success: false });
+    }
+    try {
+        await ktwSync.dismissRecent(req.params.kpId);
+        res.json({ success: true });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Синхронизировать сейчас (сервер и сам следит за историей ktw)
+app.post('/api/ktw/sync', async (req, res) => {
+    const result = await ktwSync.syncNow();
+    res.status(result && result.error ? 500 : 200).json({ success: !(result && result.error), ...result });
+});
+
 // === НАСТРОЙКИ ТЕМЫ ===
 
 app.get('/api/settings', async (req, res) => {
@@ -856,12 +895,18 @@ async function start(port = PORT, host = HOST) {
     await ensureDir(FILMS_DIR);
     await ensureDir(CATEGORIES_DIR);
 
+    if (process.env.KINOTEKA_NO_SYNC !== '1') {
+        ktwSync.start();
+    }
+
     const server = app.listen(port, host, () => {
         console.log(`Сервер запущен на http://localhost:${server.address().port}`);
         if (DATA_DIR !== __dirname) {
             console.log(`Папка данных: ${DATA_DIR}`);
         }
     });
+
+    server.on('close', () => ktwSync.stop());
 
     server.on('error', (err) => {
         if (err.code === 'EADDRINUSE') {
@@ -880,5 +925,5 @@ if (require.main === module) {
     start();
 }
 
-module.exports = { app, start, listFilms, createFilm, updateFilm, importFromKinopoisk };
+module.exports = { app, start, listFilms, createFilm, updateFilm, importFromKinopoisk, ktwSync };
 

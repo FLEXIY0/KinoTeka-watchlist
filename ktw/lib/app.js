@@ -2020,6 +2020,7 @@ async function run(options) {
                     film = Object.assign({}, film, loaded.details);
                     posterLines = loaded.art;
                     seasons = loaded.seasons;
+                    history.markOpened(film);
                 } catch (err) {
                     await messageScreen('Не вышло', [err.message], 'любая клавиша — назад');
                     screen = 'search';

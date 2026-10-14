@@ -1706,11 +1706,12 @@
                     
                     const matchesStatus = filters.watchStatus.some(status => {
                         if (status === 'notwatched') {
-                            // Не просмотрен = рейтинг 0
-                            return rating === 0;
+                            // Не просмотрен = нет оценки и статус не «просмотрен» / «в процессе»
+                            return rating === 0 && filmWatchStatus !== 'watched' && filmWatchStatus !== 'in-progress';
                         } else if (status === 'watched') {
-                            // Просмотрен = рейтинг > 0 и не в процессе
-                            return rating > 0 && filmWatchStatus !== 'in-progress';
+                            // Просмотрен = отмечен просмотренным (например, досмотрен в ktw)
+                            // или есть оценка и не в процессе
+                            return filmWatchStatus === 'watched' || (rating > 0 && filmWatchStatus !== 'in-progress');
                         } else if (status === 'watching') {
                             // В процессе просмотра
                             return filmWatchStatus === 'in-progress';

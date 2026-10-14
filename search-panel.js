@@ -330,6 +330,7 @@
 
             const actions = el('div', { className: 'kp-card-actions' });
             actions.append(addButton(item), watchButton(item));
+            if (append) actions.append(dismissButton(item, card));
             bottom.append(actions);
             body.append(bottom);
 
@@ -379,6 +380,24 @@
                 btn.disabled = false;
                 setButton(btn, 'add', 'В список');
                 setHint(error.message, 'error');
+            }
+        });
+        return btn;
+    }
+
+    // Убрать из «недавно открывали» (временный список)
+    function dismissButton(item, card) {
+        const btn = button('close', '');
+        btn.title = 'Убрать из недавно открытых';
+        btn.addEventListener('click', async () => {
+            btn.disabled = true;
+            try {
+                await fetch('/api/ktw/recent/' + encodeURIComponent(item.kpId), { method: 'DELETE' });
+                state.recent = state.recent.filter((r) => r.kpId !== item.kpId);
+                card.remove();
+                if (!state.recent.length) results.replaceChildren();
+            } catch {
+                btn.disabled = false;
             }
         });
         return btn;

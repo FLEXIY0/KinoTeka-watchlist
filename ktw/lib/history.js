@@ -10,6 +10,11 @@ var config = require('./config');
 var HISTORY_FILE = path.join(config.CONFIG_DIR, 'history.json');
 var MAX_ITEMS = 50;
 
+// Открытые карточки (даже без просмотра) — КиноТека показывает их как
+// «недавно открывали». Отдельный файл, чтобы не засорять историю просмотров.
+var OPENED_FILE = path.join(config.CONFIG_DIR, 'opened.json');
+var MAX_OPENED = 100;
+
 // Чтение файла истории
 function read() {
     try {
@@ -237,6 +242,42 @@ function remove(filmId) {
     write(data);
 }
 
+// Отметить, что карточку открывали
+function markOpened(film) {
+    if (!film || !film.id) return;
+    var items = readOpened();
+    var idStr = String(film.id);
+
+    items = items.filter(function (item) { return String(item.filmId) !== idStr; });
+    items.unshift({
+        filmId: idStr,
+        title: film.title || 'Без названия',
+        year: film.year ? String(film.year) : '',
+        poster: film.poster || '',
+        serial: !!film.serial,
+        description: film.description || '',
+        rating: film.rating ? String(film.rating) : '',
+        genres: Array.isArray(film.genres) ? film.genres.slice(0, 3) : [],
+        openedAt: Date.now()
+    });
+
+    try {
+        config.ensureDir();
+        fs.writeFileSync(OPENED_FILE, JSON.stringify({ items: items.slice(0, MAX_OPENED) }, null, 2) + '\n', { mode: 384 /* 0600 */ });
+    } catch (err) {
+        // Не мешаем просмотру из-за ошибки записи
+    }
+}
+
+function readOpened() {
+    try {
+        var data = JSON.parse(fs.readFileSync(OPENED_FILE, 'utf8'));
+        return Array.isArray(data.items) ? data.items : [];
+    } catch (err) {
+        return [];
+    }
+}
+
 // Очистить всю историю
 function clear() {
     write({ items: [], watchedEpisodes: {} });
@@ -244,6 +285,9 @@ function clear() {
 
 module.exports = {
     HISTORY_FILE: HISTORY_FILE,
+    OPENED_FILE: OPENED_FILE,
+    markOpened: markOpened,
+    readOpened: readOpened,
     read: read,
     write: write,
     formatTime: formatTime,
