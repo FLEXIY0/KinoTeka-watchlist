@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>KINOTEKA — просмотр</title>
+    <link rel="icon" type="image/png" href="assets/images/logo.png">
+    <link rel="stylesheet" href="theme-manager.css">
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" />
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Nunito:wght@300;400;500;600;700&display=swap');
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: "Nunito", sans-serif;
+            background: var(--bg-primary, #141414);
+            color: var(--text-primary, #B8B8B8);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* Тонкая шапка: назад · название · действия */
+        .bar {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            padding: 10px 18px;
+            min-height: 52px;
+        }
+
+        .bar a,
+        .bar button {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            color: var(--text-tertiary, #848484);
+            background: none;
+            border: none;
+            font: inherit;
+            font-size: 14px;
+            text-decoration: none;
+            cursor: pointer;
+            padding: 6px 10px;
+            border-radius: 10px;
+            transition: color 0.2s ease, background 0.2s ease;
+        }
+
+        .bar a:hover,
+        .bar button:hover {
+            color: var(--text-hover, #ffffff);
+            background: var(--bg-secondary, #212121);
+        }
+
+        .bar .material-symbols-outlined {
+            font-size: 20px;
+        }
+
+        .title {
+            flex: 1;
+            min-width: 0;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            font-size: 16px;
+            color: var(--text-secondary, #9E9E9E);
+        }
+
+        .title small {
+            margin-left: 8px;
+            font-size: 13px;
+            color: var(--text-muted, #6e6e6e);
+        }
+
+        .stage {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0 18px 18px;
+        }
+
+        .kinobox_player {
+            width: 100%;
+            max-width: calc((100vh - 80px) * 16 / 9);
+            aspect-ratio: 16 / 9;
+            background: #000;
+            border-radius: 12px;
+            overflow: hidden;
+        }
+
+        .status {
+            position: fixed;
+            left: 50%;
+            bottom: 14px;
+            transform: translateX(-50%);
+            font-size: 12px;
+            color: var(--text-muted, #6e6e6e);
+            pointer-events: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="bar">
+        <a href="index.html" id="back" title="Назад (Esc)"><span class="material-symbols-outlined">arrow_back</span></a>
+        <div class="title" id="title">Загрузка…</div>
+        <button type="button" id="reload" title="Перезапустить плеер"><span class="material-symbols-outlined">refresh</span></button>
+        <button type="button" id="ktw" title="Открыть в ktw (mpv, без рекламы)"><span class="material-symbols-outlined">terminal</span>ktw</button>
+    </div>
+
+    <div class="stage">
+        <div class="kinobox_player" id="player"></div>
+    </div>
+    <div class="status" id="status"></div>
+
+    <script src="https://fbphdplay.top/kinobox.js"></script>
+    <script src="theme-manager.js"></script>
+    <script src="watch.js"></script>
+</body>
+</html>

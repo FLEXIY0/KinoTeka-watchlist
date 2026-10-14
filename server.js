@@ -8,6 +8,7 @@ const { spawn } = require('child_process');
 const kinopoisk = require('./lib/kinopoisk');
 const { createKtwSync } = require('./lib/ktw-sync');
 const { matchCategories } = require('./lib/categories');
+const ktwHistory = require('./ktw/lib/history');
 
 const app = express();
 const PORT = Number(process.env.PORT) || 3000;
@@ -883,6 +884,128 @@ app.delete('/api/ktw/recent/:kpId', async (req, res) => {
 app.post('/api/ktw/sync', async (req, res) => {
     const result = await ktwSync.syncNow();
     res.status(result && result.error ? 500 : 200).json({ success: !(result && result.error), ...result });
+});
+
+// === ПРОСМОТР В БРАУЗЕРЕ (watch.html) ===
+
+// Список плееров для виджета kinobox идёт через сервер: api.kinobox.tv отвечает
+// не отовсюду, поэтому перебираем зеркала (своё из настроек ktw — первым)
+const ktwConfig = require('./ktw/lib/config');
+const KINOBOX_MIRRORS = ['https://fbphdplay.top/api/players', 'https://api.kinobox.tv/api/players'];
+const kinoboxCache = new Map();
+
+// Виджет строит адрес от корня сайта: baseUrl + /api/players
+app.get('/api/players', async (req, res) => {
+    const query = req.originalUrl.split('?')[1] || '';
+    if (!/^[\w=&%.-]*$/.test(query)) {
+        return res.status(400).json({ error: 'Invalid query' });
+    }
+
+    const cached = kinoboxCache.get(query);
+    if (cached && Date.now() - cached.at < 10 * 60 * 1000) return res.json(cached.data);
+
+    const configured = ktwConfig.resolveKinoboxApi();
+    const mirrors = configured ? [configured, ...KINOBOX_MIRRORS.filter((m) => m !== configured)] : KINOBOX_MIRRORS;
+    let lastError = 'нет ответа';
+
+    for (const mirror of mirrors) {
+        try {
+            const response = await fetch(`${mirror}${mirror.includes('?') ? '&' : '?'}${query}`, {
+                headers: { Referer: 'https://kinobox.tv/', Origin: 'https://kinobox.tv' },
+                signal: AbortSignal.timeout(10000)
+            });
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            const data = await response.json();
+            if (data && Array.isArray(data.data) && data.data.length) {
+                kinoboxCache.set(query, { at: Date.now(), data });
+                return res.json(data);
+            }
+            lastError = 'пустой список плееров';
+        } catch (error) {
+            lastError = error.message;
+        }
+    }
+    res.status(502).json({ error: { title: `Плееры не получены: ${lastError}` } });
+});
+
+// Что показать в шапке страницы просмотра: из коллекции, истории ktw или Кинопоиска
+app.get('/api/watch/info/:kpId', async (req, res) => {
+    const kpId = req.params.kpId;
+    if (!/^\d+$/.test(kpId)) {
+        return res.status(400).json({ error: 'Invalid id', success: false });
+    }
+    try {
+        const info = { kpId, title: '', year: '', serial: false, poster: '', filmId: null, hasHistory: false };
+
+        const film = await findFilmByKpId(kpId);
+        if (film) {
+            Object.assign(info, {
+                title: film.title,
+                year: film.year || '',
+                serial: film.contentType === 'series',
+                poster: film.bannerUrl ? '/' + film.bannerUrl : '',
+                filmId: film.id
+            });
+        }
+
+        const watched = ktwHistory.read().items.find((i) => String(i.filmId) === kpId);
+        info.hasHistory = Boolean(watched && (watched.timePos > 0 || watched.watched));
+        const fromHistory = watched || ktwHistory.readOpened().find((i) => String(i.filmId) === kpId);
+        if (fromHistory && !info.title) {
+            Object.assign(info, {
+                title: fromHistory.title || '',
+                year: fromHistory.year || '',
+                serial: Boolean(fromHistory.serial),
+                poster: fromHistory.poster || ''
+            });
+        }
+
+        if (!info.title && kinopoisk.getKey()) {
+            try {
+                const details = await kinopoisk.raw(`api/v2.2/films/${kpId}`);
+                Object.assign(info, {
+                    title: details.nameRu || details.nameOriginal || details.nameEn || '',
+                    year: details.year ? String(details.year) : '',
+                    serial: Boolean(details.serial) || ['TV_SERIES', 'MINI_SERIES', 'TV_SHOW'].includes(details.type),
+                    poster: details.posterUrlPreview || details.posterUrl || ''
+                });
+            } catch {}
+        }
+
+        res.json(info);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Прогресс из веб-плеера пишется в общую историю ktw: оттуда его берут
+// строка «продолжить» и синхронизация с коллекцией
+app.post('/api/watch/progress', (req, res) => {
+    const b = req.body || {};
+    const kpId = String(b.kpId || '');
+    const num = (v) => (v === undefined || v === null || v === '' ? 0 : Number(v));
+    const season = num(b.season);
+    const episode = num(b.episode);
+    const timePos = num(b.timePos);
+    const duration = num(b.duration);
+
+    if (!/^\d+$/.test(kpId) || ![season, episode, timePos, duration].every((n) => Number.isFinite(n) && n >= 0)) {
+        return res.status(400).json({ error: 'Invalid progress', success: false });
+    }
+
+    ktwHistory.saveProgress({
+        filmId: kpId,
+        title: String(b.title || '').slice(0, 300),
+        year: String(b.year || '').slice(0, 10),
+        poster: String(b.poster || '').slice(0, 1000),
+        serial: Boolean(b.serial),
+        season: season || null,
+        episode: episode || null,
+        timePos,
+        duration,
+        player: 'web' + (b.player ? ':' + String(b.player).slice(0, 40) : '')
+    });
+    res.json({ success: true });
 });
 
 // === НАСТРОЙКИ ТЕМЫ ===

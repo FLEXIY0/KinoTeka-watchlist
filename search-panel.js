@@ -329,7 +329,7 @@
             }
 
             const actions = el('div', { className: 'kp-card-actions' });
-            actions.append(addButton(item), watchButton(item));
+            actions.append(addButton(item), watchButton(item), ktwButton(item));
             if (append) actions.append(dismissButton(item, card));
             bottom.append(actions);
             body.append(bottom);
@@ -403,9 +403,18 @@
         return btn;
     }
 
+    // «Смотреть» — плееры балансеров прямо в браузере
     function watchButton(item) {
-        const btn = button('play_arrow', 'Смотреть');
-        btn.title = 'Открыть в ktw (плеер в терминале)';
+        const link = el('a', { className: 'kp-btn', href: 'watch.html?kp=' + encodeURIComponent(item.kpId) });
+        link.title = 'Смотреть в браузере';
+        link.append(el('span', { className: 'material-symbols-outlined', textContent: 'play_arrow' }), document.createTextNode('Смотреть'));
+        return link;
+    }
+
+    // Маленькая кнопка ktw — плеер в терминале (mpv, без рекламы)
+    function ktwButton(item) {
+        const btn = button('terminal', '');
+        btn.title = 'Открыть в ktw (терминал, mpv)';
         btn.addEventListener('click', async () => {
             btn.disabled = true;
             try {

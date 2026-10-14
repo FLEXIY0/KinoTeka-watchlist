@@ -47,7 +47,15 @@
         return line;
     }
 
-    async function play(item) {
+    // Страница просмотра в браузере; серия передаётся как подсказка
+    function watchUrl(item) {
+        let url = 'watch.html?kp=' + encodeURIComponent(item.kpId);
+        if (item.serial && item.season && item.episode) url += `&s=${item.season}&e=${item.episode}`;
+        return url;
+    }
+
+    // В ktw — с той же серии и секунды
+    async function playInKtw(item) {
         status.textContent = `Открываю «${item.title}» в ktw…`;
         const body = { kpId: item.kpId, resume: !item.finished };
         if (item.serial && item.season && item.episode) {
@@ -70,13 +78,8 @@
 
     function row(item, main) {
         const link = el('a', 'cw-row');
-        link.href = '#';
-        link.title = item.finished ? 'Смотреть снова в ktw' : 'Продолжить в ktw';
-        link.addEventListener('click', (e) => {
-            e.preventDefault();
-            link.blur(); // иначе фокус держит строку видимой после ухода мыши
-            play(item);
-        });
+        link.href = watchUrl(item);
+        link.title = item.finished ? 'Смотреть снова' : 'Продолжить';
 
         if (main) link.append(el('span', 'material-symbols-outlined', 'play_arrow'));
         link.append(el('span', 'cw-title', item.title));
@@ -84,7 +87,17 @@
         const meta = describe(item);
         if (meta) link.append(document.createTextNode(' · ' + meta));
 
-        // Иконка карточки в коллекции появляется при наведении на строку
+        // При наведении на строку: продолжить в ktw и открыть карточку
+        const ktw = el('span', 'material-symbols-outlined cw-card', 'terminal');
+        ktw.title = 'Продолжить в ktw (терминал)';
+        ktw.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            link.blur(); // иначе фокус держит строку видимой после ухода мыши
+            playInKtw(item);
+        });
+        link.append(ktw);
+
         if (item.filmId) {
             const card = el('span', 'material-symbols-outlined cw-card', 'open_in_new');
             card.title = 'Открыть карточку';
