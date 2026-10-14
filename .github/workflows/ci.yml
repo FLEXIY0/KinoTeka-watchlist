@@ -63,6 +63,8 @@ jobs:
           $ktw = Join-Path $env:KINOTEKA_HOME 'bin\ktw.cmd'
           $help = & $ktw help | Out-String
           if ($help -notmatch 'ktw watch') { throw "unexpected help: $help" }
+          # Windows PowerShell 5.1 при Stop считает любой stderr внешней программы ошибкой
+          $ErrorActionPreference = 'Continue'
           $version = & $ktw --version 2>&1 | Out-String
           if ($version -notmatch $env:KINOTEKA_REF.Substring(0, 7)) { throw "unexpected version: $version" }
           Write-Host $version
