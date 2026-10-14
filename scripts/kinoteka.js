@@ -68,7 +68,14 @@ function ensureMpvOnPath() {
     const dirs = String(process.env.PATH || '').split(path.delimiter);
     if (dirs.some((dir) => dir && fs.existsSync(path.join(dir, 'mpv.exe')))) return;
 
-    const found = findMpvDir();
+    // Папка, которую нашёл установщик (в том числе по записи winget в реестре)
+    let remembered = null;
+    try {
+        remembered = fs.readFileSync(path.join(ROOT, '..', 'mpv-path.txt'), 'utf8').replace(/^\uFEFF/, '').trim();
+    } catch {}
+    if (remembered && !fs.existsSync(path.join(remembered, 'mpv.exe'))) remembered = null;
+
+    const found = remembered || findMpvDir();
     if (found) process.env.PATH = found + path.delimiter + process.env.PATH;
 }
 

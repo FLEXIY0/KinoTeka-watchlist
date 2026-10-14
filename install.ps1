@@ -25,6 +25,7 @@
     $Repo = 'FLEXIY0/KinoTeka-watchlist'
     $Ref = if ($env:KINOTEKA_REF) { $env:KINOTEKA_REF } else { 'main' }
     $Home_ = if ($env:KINOTEKA_HOME) { $env:KINOTEKA_HOME } else { Join-Path $env:LOCALAPPDATA 'KinoTeka' }
+    $Home_ = [IO.Path]::GetFullPath($Home_)   # команда ktw передаёт путь вида ...\bin\..
     $NodeDir = Join-Path $Home_ 'node'
     $AppDir = Join-Path $Home_ 'app'
     $DataDir = Join-Path $Home_ 'data'
@@ -107,46 +108,69 @@
     # ── 2. Приложение ───────────────────────────────────────────────────────
     $installed = if (Test-Path $VersionFile) { (Get-Content $VersionFile -Raw).Trim() } else { $null }
     $latest = $null
+    $apiFailed = $false
     try {
-        $latest = (Invoke-RestMethod -Uri "https://api.github.com/repos/$Repo/commits/$Ref" -UseBasicParsing -Headers @{ 'User-Agent' = 'KinoTeka-installer' }).sha
+        $apiBase = if ($env:KINOTEKA_GITHUB_API) { $env:KINOTEKA_GITHUB_API } else { 'https://api.github.com' }
+        $latest = (Invoke-RestMethod -Uri "$apiBase/repos/$Repo/commits/$Ref" -UseBasicParsing -TimeoutSec 15 -Headers @{ 'User-Agent' = 'KinoTeka-installer' }).sha
     } catch {
-        if (-not $installed) { $latest = $Ref }   # GitHub API недоступен, но ставить всё равно нужно
+        # GitHub API не ответил (чаще всего лимит: 60 запросов в час с одного IP).
+        # Версию не узнать, поэтому просто скачиваем свежий архив — он маленький
+        $latest = $Ref
+        $apiFailed = $true
     }
 
     $appReady = (Test-Path (Join-Path $AppDir 'server.js')) -and (Test-Path (Join-Path $AppDir 'node_modules'))
-    if ($latest -and ($latest -ne $installed -or -not $appReady)) {
+    $needUpdate = $latest -and ($latest -ne $installed -or -not $appReady)
+
+    if (-not $needUpdate) {
+        Step 'Установлена последняя версия'
+    } else {
         Step $(if ($installed) { 'Обновляю КиноТеку...' } else { 'Скачиваю КиноТеку...' })
+        if ($apiFailed) { Info 'GitHub API не ответил — скачиваю свежую версию напрямую' }
+
+        # 1) Скачать и распаковать. Нет сети, но КиноТека уже стоит — запускаем её
         $tmp = New-TempDir
+        $newApp = $null
         try {
             $zip = Join-Path $tmp 'app.zip'
             Download "https://github.com/$Repo/archive/$latest.zip" $zip
             $extract = Join-Path $tmp 'x'
             Expand-Zip $zip $extract
             $newApp = (Get-ChildItem $extract -Directory | Select-Object -First 1).FullName
-
-            # Меняем папки через переименование: если КиноТека сейчас запущена,
-            # Windows не даст переименовать папку, и старая версия останется целой
-            $backup = "$AppDir.old"
-            if (Test-Path $backup) { Remove-Item -Recurse -Force $backup }
-            $swapped = $true
-            if (Test-Path $AppDir) {
-                try { Rename-Item $AppDir (Split-Path $backup -Leaf) } catch { $swapped = $false }
-            }
-            if ($swapped) {
-                Move-Item $newApp $AppDir
-                # Уже скачанные модули переносим, чтобы npm только докачал разницу
-                $oldModules = Join-Path $backup 'node_modules'
-                if (Test-Path $oldModules) { Move-Item $oldModules (Join-Path $AppDir 'node_modules') }
-                Remove-Item -Recurse -Force $backup -ErrorAction SilentlyContinue
-            }
-        } finally {
+        } catch {
             Remove-Item -Recurse -Force $tmp -ErrorAction SilentlyContinue
+            if (-not $appReady) { throw "Не удалось скачать КиноТеку: $($_.Exception.Message)" }
+            Info 'Нет связи с GitHub — запускаю установленную версию'
         }
 
-        if (-not $swapped) {
-            Write-Host '    КиноТека сейчас запущена — обновление пропущено.' -ForegroundColor Yellow
-            Write-Host '    Закройте её окно (клавиша Q) и вставьте команду ещё раз.' -ForegroundColor Yellow
-        } else {
+        # 2) Подменить папку приложения через переименование: если КиноТека сейчас
+        #    запущена, Windows не даст переименовать папку, и старая версия останется целой
+        $swapped = $false
+        if ($newApp) {
+            try {
+                $backup = "$AppDir.old"
+                if (Test-Path $backup) { Remove-Item -Recurse -Force $backup }
+                $swapped = $true
+                if (Test-Path $AppDir) {
+                    try { Rename-Item $AppDir (Split-Path $backup -Leaf) } catch { $swapped = $false }
+                }
+                if ($swapped) {
+                    Move-Item $newApp $AppDir
+                    # Уже скачанные модули переносим, чтобы npm только докачал разницу
+                    $oldModules = Join-Path $backup 'node_modules'
+                    if (Test-Path $oldModules) { Move-Item $oldModules (Join-Path $AppDir 'node_modules') }
+                    Remove-Item -Recurse -Force $backup -ErrorAction SilentlyContinue
+                } else {
+                    Write-Host '    КиноТека сейчас запущена — обновление пропущено.' -ForegroundColor Yellow
+                    Write-Host '    Закройте её окно (клавиша Q) и запустите обновление ещё раз.' -ForegroundColor Yellow
+                }
+            } finally {
+                Remove-Item -Recurse -Force $tmp -ErrorAction SilentlyContinue
+            }
+        }
+
+        # 3) Зависимости
+        if ($swapped) {
             Step 'Устанавливаю зависимости...'
             Push-Location $AppDir
             $oldPath = $env:Path
@@ -161,31 +185,59 @@
             Set-Content -Path $VersionFile -Value $latest -Encoding ASCII
             Info "Версия $($latest.Substring(0, [Math]::Min(7, $latest.Length)))"
         }
-    } elseif ($appReady) {
-        Step $(if ($latest) { 'Установлена последняя версия' } else { 'Нет связи с GitHub — запускаю установленную версию' })
-    } else {
-        throw 'Не удалось скачать КиноТеку: нет связи с GitHub'
     }
 
     # ── 3. Плеер mpv (для просмотра в ktw) ─────────────────────────────────
-    # winget ставит mpv в папку пользователя, а из окна администратора — в Program Files
-    $wingetRoots = @((Join-Path $env:LOCALAPPDATA 'Microsoft\WinGet'), (Join-Path $env:ProgramFiles 'WinGet'))
-    $mpvKnown = [bool](Get-Command mpv -ErrorAction SilentlyContinue)
-    foreach ($root in $wingetRoots) {
-        if ((Test-Path (Join-Path $root 'Links\mpv.exe')) -or
-            (Get-ChildItem (Join-Path $root 'Packages') -Filter 'shinchiro.mpv*' -Directory -ErrorAction SilentlyContinue)) { $mpvKnown = $true }
+    # winget кладёт mpv по-разному: в папку пользователя, а из окна администратора —
+    # в Program Files; путь есть и в его записи «Установленные программы».
+    # Найденную папку запоминаем в mpv-path.txt — оттуда её берёт команда ktw.
+    function Find-Mpv {
+        $cmd = Get-Command mpv -ErrorAction SilentlyContinue
+        if ($cmd) { return Split-Path $cmd.Source }
+
+        $dirs = New-Object System.Collections.Generic.List[string]
+        foreach ($root in @((Join-Path $env:LOCALAPPDATA 'Microsoft\WinGet'), (Join-Path $env:ProgramFiles 'WinGet'))) {
+            $dirs.Add((Join-Path $root 'Links'))
+            Get-ChildItem (Join-Path $root 'Packages') -Filter 'shinchiro.mpv*' -Directory -ErrorAction SilentlyContinue |
+                ForEach-Object { $dirs.Add($_.FullName) }
+        }
+        $uninstall = @('HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*',
+                       'HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*',
+                       'HKLM:\Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*')
+        Get-ItemProperty $uninstall -ErrorAction SilentlyContinue |
+            Where-Object { ($_.DisplayName -like '*mpv*' -or $_.PSChildName -like '*mpv*') -and $_.InstallLocation } |
+            ForEach-Object { $dirs.Add($_.InstallLocation) }
+        $dirs.Add((Join-Path $env:USERPROFILE 'scoop\shims'))
+        $dirs.Add((Join-Path $env:ProgramFiles 'mpv'))
+
+        foreach ($dir in $dirs) {
+            if (-not $dir -or -not (Test-Path $dir)) { continue }
+            if (Test-Path (Join-Path $dir 'mpv.exe')) { return $dir }
+            # архив пакета иногда распаковывается во вложенную папку
+            $nested = Get-ChildItem $dir -Filter 'mpv.exe' -Recurse -Depth 2 -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($nested) { return $nested.DirectoryName }
+        }
+        return $null
     }
-    if (-not $mpvKnown -and $env:KINOTEKA_SKIP_MPV -ne '1') {
+
+    $MpvPathFile = Join-Path $Home_ 'mpv-path.txt'
+    $mpvDir = Find-Mpv
+    if (-not $mpvDir -and $env:KINOTEKA_SKIP_MPV -ne '1') {
         if (Get-Command winget -ErrorAction SilentlyContinue) {
             Step 'Ставлю видеоплеер mpv (нужен для просмотра в ktw)...'
             try {
                 winget install --id shinchiro.mpv -e --silent --accept-package-agreements --accept-source-agreements --disable-interactivity | Out-Host
-            } catch {
-                Info 'mpv поставить не вышло — коллекция работает и без него'
-            }
+            } catch {}
+            $mpvDir = Find-Mpv
+            if (-not $mpvDir) { Info 'mpv не нашёлся после установки — коллекция и просмотр в браузере работают и без него' }
         } else {
             Info 'Для просмотра в ktw нужен mpv: https://mpv.io/installation/ (коллекция работает и без него)'
         }
+    }
+    if ($mpvDir) {
+        # UTF-8 без BOM: путь может быть с кириллицей, читает его Node
+        [IO.File]::WriteAllText($MpvPathFile, $mpvDir, (New-Object System.Text.UTF8Encoding $false))
+        Info "mpv: $mpvDir"
     }
 
     # ── 4. Команда ktw ──────────────────────────────────────────────────────

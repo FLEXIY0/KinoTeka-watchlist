@@ -75,6 +75,16 @@ jobs:
           $env:KINOTEKA_NO_START = '1'
           irm "https://raw.githubusercontent.com/${{ github.repository }}/$env:KINOTEKA_REF/install.ps1" | iex
 
+      - name: Обновление, когда GitHub API не отвечает (лимит запросов)
+        run: |
+          $env:KINOTEKA_HOME = Join-Path $env:RUNNER_TEMP ((-join [char[]](0x041A,0x0438,0x043D,0x043E,0x0442,0x0435,0x043A,0x0430)) + ' Test')
+          $env:KINOTEKA_NO_START = '1'
+          $env:KINOTEKA_GITHUB_API = 'http://127.0.0.1:9'
+          Remove-Item (Join-Path $env:KINOTEKA_HOME 'app\.kinoteka-version')
+          irm "https://raw.githubusercontent.com/${{ github.repository }}/$env:KINOTEKA_REF/install.ps1" | iex
+          $version = (Get-Content (Join-Path $env:KINOTEKA_HOME 'app\.kinoteka-version') -Raw).Trim()
+          if ($version -ne $env:KINOTEKA_REF) { throw "app was not re-downloaded: $version" }
+
       - name: Запуск коллекции командой ktw
         run: |
           $env:KINOTEKA_HOME = Join-Path $env:RUNNER_TEMP ((-join [char[]](0x041A,0x0438,0x043D,0x043E,0x0442,0x0435,0x043A,0x0430)) + ' Test')
