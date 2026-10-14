@@ -87,9 +87,9 @@ npm start
 
   
 
-**Windows:** run `start_app.bat or start.bat`  
+**Windows:** run `start.bat` or `scripts\start_app.bat`  
 
-**Linux/macOS:** run `./start.sh`
+**Linux/macOS:** run `./scripts/start.sh`
 
   
 
@@ -109,7 +109,7 @@ Application will open at: `http://localhost:3000`
 
 ```
 
-├── index1.html              # Main page
+├── index.html               # Main page
 
 ├── index2.html              # Categories
 

@@ -2,6 +2,10 @@
 node_modules/
 package-lock.json
 
+# User data (films, categories, images)
+films_and_serials/
+ALL_CATEGORIES/
+
 # Database files
 films.json
 categories.json
@@ -23,6 +27,7 @@ desktop.ini
 
 # Build output
 dist/
+build/
 *.exe
 
 # IDE

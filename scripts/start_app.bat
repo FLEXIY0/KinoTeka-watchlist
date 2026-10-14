@@ -18,11 +18,20 @@ if %errorlevel% neq 0 (
     exit /b 1
 )
 
+REM Переход в корень проекта (скрипт лежит в scripts\)
+cd /d "%~dp0.."
+
+REM Установка зависимостей при первом запуске
+if not exist "node_modules\" (
+    echo 📦 Установка зависимостей...
+    call npm install --no-audit --no-fund
+)
+
 REM Запуск приложения
 echo 🚀 Запуск приложения...
 echo.
 
-node app_launcher.js
+node scripts\app_launcher.js
 
 pause
 

@@ -1,5 +1,4 @@
 const express = require('express');
-const cors = require('cors');
 const fs = require('fs').promises;
 const path = require('path');
 const multer = require('multer');
@@ -7,16 +6,34 @@ const https = require('https');
 const http = require('http');
 
 const app = express();
-const PORT = 3000;
-
-// Middleware
-app.use(cors());
-app.use(express.json());
-app.use(express.static('.')); // Обслуживание статических файлов
+const PORT = Number(process.env.PORT) || 3000;
+// По умолчанию слушаем только localhost, чтобы API не было доступно из сети.
+// Для доступа с других устройств: HOST=0.0.0.0 npm start
+const HOST = process.env.HOST || '127.0.0.1';
 
 const FILMS_DIR = path.join(__dirname, 'films_and_serials');
 const CATEGORIES_DIR = path.join(__dirname, 'ALL_CATEGORIES');
 const CATEGORIES_FILE = path.join(CATEGORIES_DIR, 'categories.json');
+const SETTINGS_FILE = path.join(__dirname, 'settings.json');
+
+// Middleware
+app.use(express.json({ limit: '10mb' }));
+app.use(express.static(__dirname)); // Обслуживание статических файлов (не зависит от текущей папки)
+
+// ID карточки — только число, иначе через ../ можно добраться до любой папки на диске
+app.param('id', (req, res, next, id) => {
+    if (!/^\d+$/.test(id)) {
+        return res.status(400).json({ error: 'Invalid film id', success: false });
+    }
+    next();
+});
+
+app.param('previewNumber', (req, res, next, previewNumber) => {
+    if (!['1', '2', '3'].includes(previewNumber)) {
+        return res.status(400).json({ error: 'Invalid preview number', success: false });
+    }
+    next();
+});
 
 // Создание директории для фильмов если её нет
 async function ensureDir(dir) {
@@ -40,12 +57,16 @@ async function clearDirectory(dir) {
 // Настройка multer для загрузки баннера
 const bannerStorage = multer.diskStorage({
     destination: async (req, file, cb) => {
-        const { id } = req.params;
-        const uploadPath = path.join(FILMS_DIR, id, 'banner');
-        await ensureDir(uploadPath);
-        // Удаляем старые файлы
-        await clearDirectory(uploadPath);
-        cb(null, uploadPath);
+        try {
+            const { id } = req.params;
+            const uploadPath = path.join(FILMS_DIR, id, 'banner');
+            await ensureDir(uploadPath);
+            // Удаляем старые файлы
+            await clearDirectory(uploadPath);
+            cb(null, uploadPath);
+        } catch (error) {
+            cb(error);
+        }
     },
     filename: (req, file, cb) => {
         // Используем фиксированное имя с оригинальным расширением
@@ -56,12 +77,16 @@ const bannerStorage = multer.diskStorage({
 // Настройка multer для загрузки превью
 const previewStorage = multer.diskStorage({
     destination: async (req, file, cb) => {
-        const { id, previewNumber } = req.params;
-        const uploadPath = path.join(FILMS_DIR, id, 'preview', `preview${previewNumber}`);
-        await ensureDir(uploadPath);
-        // Удаляем старые файлы в этой подпапке
-        await clearDirectory(uploadPath);
-        cb(null, uploadPath);
+        try {
+            const { id, previewNumber } = req.params;
+            const uploadPath = path.join(FILMS_DIR, id, 'preview', `preview${previewNumber}`);
+            await ensureDir(uploadPath);
+            // Удаляем старые файлы в этой подпапке
+            await clearDirectory(uploadPath);
+            cb(null, uploadPath);
+        } catch (error) {
+            cb(error);
+        }
     },
     filename: (req, file, cb) => {
         // Используем фиксированное имя с оригинальным расширением
@@ -225,6 +250,9 @@ app.put('/api/films/:id', async (req, res) => {
 // API: Загрузить баннер
 app.post('/api/films/:id/upload/banner', uploadBanner.single('file'), async (req, res) => {
     try {
+        if (!req.file) {
+            return res.status(400).json({ error: 'File is required', success: false });
+        }
         const filePath = path.relative(__dirname, req.file.path);
         res.json({ path: filePath, success: true });
     } catch (error) {
@@ -235,6 +263,9 @@ app.post('/api/films/:id/upload/banner', uploadBanner.single('file'), async (req
 // API: Загрузить превью (с номером: 1, 2, 3)
 app.post('/api/films/:id/upload/preview/:previewNumber', uploadPreview.single('file'), async (req, res) => {
     try {
+        if (!req.file) {
+            return res.status(400).json({ error: 'File is required', success: false });
+        }
         const filePath = path.relative(__dirname, req.file.path);
         res.json({ path: filePath, success: true });
     } catch (error) {
@@ -249,38 +280,57 @@ function downloadImage(url, redirectCount = 0) {
             reject(new Error('Too many redirects'));
             return;
         }
-        
-        const protocol = url.startsWith('https') ? https : http;
-        
-        protocol.get(url, (response) => {
-            // Обработка редиректов
+
+        let parsed;
+        try {
+            parsed = new URL(url);
+        } catch {
+            reject(new Error(`Invalid URL: ${url}`));
+            return;
+        }
+        if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+            reject(new Error(`Unsupported protocol: ${parsed.protocol}`));
+            return;
+        }
+
+        const protocol = parsed.protocol === 'https:' ? https : http;
+
+        const request = protocol.get(parsed, { headers: { 'User-Agent': 'Mozilla/5.0 KinoTeka' } }, (response) => {
+            // Обработка редиректов (Location может быть относительным)
             if (response.statusCode >= 300 && response.statusCode < 400 && response.headers.location) {
-                console.log(`Redirect ${response.statusCode}: ${url} -> ${response.headers.location}`);
-                return downloadImage(response.headers.location, redirectCount + 1)
+                response.resume();
+                const nextUrl = new URL(response.headers.location, parsed).toString();
+                console.log(`Redirect ${response.statusCode}: ${url} -> ${nextUrl}`);
+                return downloadImage(nextUrl, redirectCount + 1)
                     .then(resolve)
                     .catch(reject);
             }
-            
+
             if (response.statusCode !== 200) {
+                response.resume();
                 reject(new Error(`Failed to download image: ${response.statusCode}`));
                 return;
             }
-            
+
             const chunks = [];
             response.on('data', (chunk) => chunks.push(chunk));
             response.on('end', () => {
-                console.log(`Downloaded ${chunks.length} chunks, total size: ${Buffer.concat(chunks).length} bytes`);
-                resolve(Buffer.concat(chunks));
+                const buffer = Buffer.concat(chunks);
+                console.log(`Downloaded ${chunks.length} chunks, total size: ${buffer.length} bytes`);
+                resolve(buffer);
             });
             response.on('error', reject);
-        }).on('error', reject);
+        });
+
+        request.setTimeout(15000, () => request.destroy(new Error('Download timeout')));
+        request.on('error', reject);
     });
 }
 
 // API: Скачать изображение из URL и сохранить локально
 app.post('/api/films/:id/download-image', async (req, res) => {
+    const { id } = req.params;
     try {
-        const { id } = req.params;
         const { url, type, index } = req.body; // type: 'banner' или 'preview', index: 1,2,3 для превью
         
         if (!url) {
@@ -324,7 +374,7 @@ app.post('/api/films/:id/download-image', async (req, res) => {
         
         res.json({ path: relativePath, success: true });
     } catch (error) {
-        console.error(`❌ [Film ${id || 'unknown'}] Ошибка скачивания изображения:`, error.message);
+        console.error(`❌ [Film ${id}] Ошибка скачивания изображения:`, error.message);
         console.error('Stack:', error.stack);
         res.status(500).json({ error: error.message, success: false });
     }
@@ -358,7 +408,7 @@ async function generateFilmHTML(id, data) {
     <p>Рейтинг: ${data.rating}/10</p>
     <a href="../../edit-film.html?id=${id}">Открыть карточку</a>
     <br>
-    <a href="../../index1.html">На главную</a>
+    <a href="../../index.html">На главную</a>
 </body>
 </html>`;
 }
@@ -487,15 +537,65 @@ app.delete('/api/categories/:name', async (req, res) => {
     }
 });
 
+// === НАСТРОЙКИ ТЕМЫ ===
+
+app.get('/api/settings', async (req, res) => {
+    try {
+        const data = await fs.readFile(SETTINGS_FILE, 'utf8');
+        res.json(JSON.parse(data));
+    } catch {
+        res.status(404).json({ error: 'Settings not found' });
+    }
+});
+
+app.post('/api/settings', async (req, res) => {
+    try {
+        let existing = {};
+        try {
+            existing = JSON.parse(await fs.readFile(SETTINGS_FILE, 'utf8'));
+        } catch {}
+        const updated = { ...existing, ...req.body };
+        await fs.writeFile(SETTINGS_FILE, JSON.stringify(updated, null, 2));
+        res.json({ success: true });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
 // Маршрут для главной страницы
 app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'index.html'));
 });
 
-// Запуск сервера
-app.listen(PORT, () => {
-    console.log(`Сервер запущен на http://localhost:${PORT}`);
-    ensureDir(FILMS_DIR);
-    ensureDir(CATEGORIES_DIR);
+// Старый адрес главной страницы (index1.html переименован в index.html)
+app.get('/index1.html', (req, res) => {
+    res.redirect(301, '/index.html');
 });
+
+// Обработчик ошибок (например, от multer), чтобы сервер отвечал JSON, а не падал
+app.use((err, req, res, next) => {
+    console.error('❌ Ошибка запроса:', err.message);
+    res.status(500).json({ error: err.message, success: false });
+});
+
+// Запуск сервера
+async function start() {
+    await ensureDir(FILMS_DIR);
+    await ensureDir(CATEGORIES_DIR);
+
+    const server = app.listen(PORT, HOST, () => {
+        console.log(`Сервер запущен на http://localhost:${PORT}`);
+    });
+
+    server.on('error', (err) => {
+        if (err.code === 'EADDRINUSE') {
+            console.error(`❌ Порт ${PORT} уже занят. Возможно, сервер уже запущен.`);
+        } else {
+            console.error('❌ Ошибка сервера:', err.message);
+        }
+        process.exit(1);
+    });
+}
+
+start();
 

@@ -4,7 +4,7 @@
 
 class ThemeManager {
     constructor() {
-        this.API_URL = 'http://localhost:3000/api';
+        this.API_URL = '/api';
         this.defaultTheme = {
             backgroundColor: '#141414',
             backgroundType: 'solid', // solid, gradient, image

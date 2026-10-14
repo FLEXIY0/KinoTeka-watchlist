@@ -78,7 +78,7 @@ def create_window():
         # Создаем окно
         window = webview.create_window(
             title='Менеджер Фильмов и Сериалов',
-            url=f'http://localhost:{PORT}/index1.html',
+            url=f'http://localhost:{PORT}/',
             width=1400,
             height=900,
             resizable=True,
@@ -92,7 +92,7 @@ def create_window():
     except Exception as e:
         print(f"Ошибка при создании окна: {e}")
         # Если webview не работает, открываем в браузере
-        webbrowser.open(f'http://localhost:{PORT}/index1.html')
+        webbrowser.open(f'http://localhost:{PORT}/')
         input("Нажмите Enter для выхода...")
 
 if __name__ == '__main__':
