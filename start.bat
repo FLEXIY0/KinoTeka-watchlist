@@ -26,6 +26,9 @@ echo [OK] Node.js................[FOUND]
 timeout /t 1 /nobreak >nul
 echo.
 
+REM Run from the folder this script is in
+cd /d "%~dp0"
+
 REM Check server.js
 if not exist "server.js" (
     echo [ERROR] server.js not found
@@ -85,7 +88,7 @@ timeout /t 1 /nobreak >nul
 
 REM Open browser
 echo [START] Opening browser...
-start http://localhost:3000/index1.html
+start http://localhost:3000/
 timeout /t 1 /nobreak >nul
 echo [OK] Browser opened.........[DONE]
 echo.
@@ -108,15 +111,10 @@ echo.
 echo [STOP] Stopping server...
 echo.
 
-REM Close server window
-taskkill /F /FI "WINDOWTITLE eq Kinoteka Server*" >nul 2>&1
-timeout /t 1 /nobreak >nul
-
-REM Kill remaining Node.js processes
-taskkill /F /IM node.exe >nul 2>&1
+REM Close server window (only our server, other Node.js processes are left alone)
+taskkill /F /T /FI "WINDOWTITLE eq Kinoteka Server*" >nul 2>&1
 
 timeout /t 1 /nobreak >nul
 echo [OK] Server stopped.........[COMPLETE]
-echo [OK] All processes killed...[DONE]
 echo.
 timeout /t 1 /nobreak >nul

@@ -85,8 +85,8 @@ if "%PROCESSOR_ARCHITECTURE%"=="x86" (
 echo [INFO] Архитектура системы: %ARCH%
 echo [%date% %time%] Архитектура: %ARCH% >> "%LOG_FILE%"
 
-REM URL для Node.js v18 LTS
-set "NODE_VERSION=18.20.4"
+REM URL для Node.js v22 LTS
+set "NODE_VERSION=22.22.0"
 set "NODE_URL=https://nodejs.org/dist/v%NODE_VERSION%/node-v%NODE_VERSION%-win-%ARCH%.zip"
 set "NODE_ZIP=%INSTALL_DIR%\nodejs.zip"
 
@@ -165,7 +165,7 @@ set "REPO_ZIP=%INSTALL_DIR%\repo.zip"
 
 REM Проверка наличия git
 where git >nul 2>&1
-if errorlevel 0 (
+if not errorlevel 1 (
     echo [INFO] Git обнаружен, клонирование репозитория...
     echo [%date% %time%] Клонирование через Git >> "%LOG_FILE%"
     
@@ -390,7 +390,7 @@ echo  2. Ручной запуск через файл:
 echo     %INSTALL_DIR%\Launch_Kinoteka.bat
 echo.
 echo  3. После запуска откроется браузер по адресу:
-echo     http://localhost:3000/index1.html
+echo     http://localhost:3000/
 echo.
 echo ════════════════════════════════════════════════════════════
 echo.

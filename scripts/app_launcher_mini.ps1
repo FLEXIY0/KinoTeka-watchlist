@@ -102,7 +102,7 @@ function Main {
     if (Test-PortInUse -Port $Port) {
         Write-ColorText "⚠️  Сервер уже запущен на порту $Port" "Yellow"
         Write-ColorText "🌐 Открываю приложение..." "Cyan"
-        Open-InBrowser "http://localhost:$Port/index1.html"
+        Open-InBrowser "http://localhost:$Port/"
         return
     }
     
@@ -117,12 +117,12 @@ function Main {
     Start-Sleep -Seconds 1
     
     # Открываем в браузере
-    Open-InBrowser "http://localhost:$Port/index1.html"
+    Open-InBrowser "http://localhost:$Port/"
     
     Write-Host ""
     Write-ColorText "───────────────────────────────────────────" "Gray"
     Write-ColorText "✨ Приложение запущено!" "Green"
-    Write-ColorText "📍 URL: http://localhost:$Port/index1.html" "Gray"
+    Write-ColorText "📍 URL: http://localhost:$Port/" "Gray"
     Write-ColorText "🛑 Для остановки закройте это окно" "Gray"
     Write-ColorText "───────────────────────────────────────────" "Gray"
     Write-Host ""

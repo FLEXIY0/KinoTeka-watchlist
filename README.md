@@ -78,9 +78,9 @@ npm start
 
   
 
-**Windows:** запустите `start_app.bat` или `start.bat`  
+**Windows:** запустите `start.bat` или `scripts\start_app.bat`  
 
-**Linux/macOS:** запустите `./start.sh`
+**Linux/macOS:** запустите `./scripts/start.sh`
 
   
 

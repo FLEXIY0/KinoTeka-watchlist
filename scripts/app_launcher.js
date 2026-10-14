@@ -8,24 +8,19 @@ const http = require('http');
 const path = require('path');
 
 const PORT = 3000;
-const APP_URL = `http://localhost:${PORT}/index1.html`;
+const APP_URL = `http://localhost:${PORT}/`;
+// Лаунчер лежит в scripts/, сервер — в корне проекта
+const ROOT_DIR = path.join(__dirname, '..');
 
-// Проверка, занят ли порт
+// Проверка, отвечает ли сервер на порту
 function isPortInUse(port) {
     return new Promise((resolve) => {
-        const server = http.createServer();
-        server.once('error', (err) => {
-            if (err.code === 'EADDRINUSE') {
-                resolve(true);
-            } else {
-                resolve(false);
-            }
+        const req = http.get({ host: '127.0.0.1', port, path: '/', timeout: 1000 }, (res) => {
+            res.resume();
+            resolve(true);
         });
-        server.once('listening', () => {
-            server.close();
-            resolve(false);
-        });
-        server.listen(port);
+        req.on('timeout', () => req.destroy());
+        req.on('error', () => resolve(false));
     });
 }
 
@@ -101,8 +96,9 @@ async function main() {
     console.log('🔄 Запуск сервера...');
     
     // Запускаем сервер
-    const serverProcess = spawn('node', ['server.js'], {
-        cwd: __dirname,
+    // process.execPath — тот же node, которым запущен лаунчер (не зависит от PATH)
+    const serverProcess = spawn(process.execPath, [path.join(ROOT_DIR, 'server.js')], {
+        cwd: ROOT_DIR,
         stdio: 'inherit',
         detached: false
     });

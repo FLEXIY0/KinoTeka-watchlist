@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>KINOTEKA</title>
-    <link rel="icon" type="image/png" href="logo.png">
+    <link rel="icon" type="image/png" href="assets/images/logo.png">
     <link rel="stylesheet" href="theme-manager.css">
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Quicksand:wght@300;400;500;600;700&family=Nunito:wght@300;400;500;600;700&family=Roboto:wght@300;400;500;700&family=Open+Sans:wght@300;400;600;700&family=Lato:wght@300;400;700&family=Poppins:wght@300;400;500;600;700&family=Montserrat:wght@300;400;500;600;700&family=Source+Sans+Pro:wght@300;400;600;700&display=swap');
@@ -1153,7 +1153,7 @@
             }
             
             try {
-                const response = await fetch('http://localhost:3000/api/films');
+                const response = await fetch('/api/films');
                 if (!response.ok) {
                     throw new Error('Ошибка загрузки данных');
                 }
@@ -1232,7 +1232,7 @@
         // Загрузка жанров из API (categories.json) - для кнопки "Жанры"
         async function loadGenres() {
             try {
-                const response = await fetch('http://localhost:3000/api/categories');
+                const response = await fetch('/api/categories');
                 if (!response.ok) {
                     throw new Error('Ошибка загрузки жанров');
                 }
@@ -1302,7 +1302,7 @@
         // Загрузка категорий из API (categories.json) - для скрытых фильтров
         async function loadCategories() {
             try {
-                const response = await fetch('http://localhost:3000/api/categories');
+                const response = await fetch('/api/categories');
                 if (!response.ok) {
                     throw new Error('Ошибка загрузки категорий');
                 }
@@ -1918,7 +1918,7 @@
             const posterImg = document.getElementById('previewPosterImg');
             if (film.bannerUrl) {
                 const imagePath = film.bannerUrl.replace(/\\/g, '/');
-                posterImg.src = `http://localhost:3000/${imagePath}`;
+                posterImg.src = `/${imagePath}`;
                 posterImg.style.display = 'block';
             } else {
                 posterImg.style.display = 'none';
