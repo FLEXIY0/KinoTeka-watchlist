@@ -20,3 +20,67 @@ jobs:
           node-version: ${{ matrix.node }}
       - run: npm install --no-audit --no-fund
       - run: npm test
+
+  # Проверяет команду установки ровно так, как её запускает пользователь:
+  # irm https://raw.githubusercontent.com/.../install.ps1 | iex
+  install-windows:
+    name: install.ps1 / ${{ matrix.shell }}
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shell: [powershell, pwsh]
+    defaults:
+      run:
+        shell: ${{ matrix.shell }}
+    env:
+      KINOTEKA_REF: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - name: Первая установка (без системного Node — качается портативный)
+        run: |
+          $env:KINOTEKA_HOME = Join-Path $env:RUNNER_TEMP 'KinoTeka'
+          $env:KINOTEKA_NO_START = '1'
+          $env:Path = ($env:Path -split ';' | Where-Object { $_ -and -not (Test-Path (Join-Path $_ 'node.exe')) }) -join ';'
+          if (Get-Command node -ErrorAction SilentlyContinue) { throw 'system node is still on PATH' }
+
+          irm "https://raw.githubusercontent.com/${{ github.repository }}/$env:KINOTEKA_REF/install.ps1" | iex
+
+          foreach ($p in 'node\node.exe', 'app\server.js', 'app\node_modules\express', 'app\.kinoteka-version') {
+            if (-not (Test-Path (Join-Path $env:KINOTEKA_HOME $p))) { throw "missing $p" }
+          }
+          if (Test-Path (Join-Path $env:KINOTEKA_HOME 'app\assets\images\demo.gif')) { throw 'demo.gif should not be downloaded' }
+
+      - name: Повторный запуск (уже установлено)
+        run: |
+          $env:KINOTEKA_HOME = Join-Path $env:RUNNER_TEMP 'KinoTeka'
+          $env:KINOTEKA_NO_START = '1'
+          irm "https://raw.githubusercontent.com/${{ github.repository }}/$env:KINOTEKA_REF/install.ps1" | iex
+
+      - name: Запуск и проверка приложения
+        run: |
+          $env:KINOTEKA_HOME = Join-Path $env:RUNNER_TEMP 'KinoTeka'
+          $shellExe = (Get-Process -Id $PID).Path
+          $command = "irm 'https://raw.githubusercontent.com/${{ github.repository }}/$env:KINOTEKA_REF/install.ps1' | iex"
+          $proc = Start-Process -FilePath $shellExe -ArgumentList '-NoProfile', '-Command', $command -PassThru
+
+          try {
+            $ok = $false
+            for ($i = 0; $i -lt 60; $i++) {
+              try {
+                $films = Invoke-RestMethod -Uri 'http://127.0.0.1:3000/api/films' -UseBasicParsing
+                $ok = $true
+                break
+              } catch { Start-Sleep -Seconds 1 }
+            }
+            if (-not $ok) { throw 'server did not start' }
+
+            $page = Invoke-WebRequest -Uri 'http://127.0.0.1:3000/' -UseBasicParsing
+            if ($page.StatusCode -ne 200) { throw "index returned $($page.StatusCode)" }
+
+            $film = Invoke-RestMethod -Uri 'http://127.0.0.1:3000/api/films' -Method Post -ContentType 'application/json' -Body '{"title":"Test"}'
+            $dataFile = Join-Path $env:KINOTEKA_HOME "data\films_and_serials\$($film.id)\data.json"
+            if (-not (Test-Path $dataFile)) { throw "film was not saved to data dir: $dataFile" }
+            Write-Host "OK: film $($film.id) saved to $dataFile"
+          } finally {
+            taskkill /PID $proc.Id /T /F | Out-Null
+          }
