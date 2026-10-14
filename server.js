@@ -8,6 +8,7 @@ const { spawn } = require('child_process');
 const kinopoisk = require('./lib/kinopoisk');
 const { createKtwSync } = require('./lib/ktw-sync');
 const { matchCategories } = require('./lib/categories');
+const { createPlayers } = require('./lib/players');
 const ktwHistory = require('./ktw/lib/history');
 
 const app = express();
@@ -888,22 +889,13 @@ app.post('/api/ktw/sync', async (req, res) => {
 
 // === ПРОСМОТР В БРАУЗЕРЕ (watch.html) ===
 
-// Список плееров для виджета kinobox идёт через сервер: api.kinobox.tv отвечает
-// не отовсюду, поэтому перебираем зеркала (своё из настроек ktw — первым)
-const ktwConfig = require('./ktw/lib/config');
-const KINOBOX_MIRRORS = ['https://fbphdplay.top/api/players', 'https://api.kinobox.tv/api/players'];
-const kinoboxCache = new Map();
-
-// Порядок плееров в виджете — как в ktw: Collaps и Kodik (он же сообщает
-// прогресс) первыми, Alloha последним — работает хуже остальных
-function playerPriority(type) {
-    const t = String(type || '').toLowerCase();
-    if (t.includes('collaps')) return 100;
-    if (t.includes('kodik')) return 80;
-    if (t.includes('veoveo')) return 50;
-    if (t.includes('alloha')) return 5;
-    return 10;
-}
+// Список плееров для виджета: kinobox через зеркала + прямые источники +
+// поиск по названию + живой рейтинг (см. lib/players.js)
+const players = createPlayers({
+    dataDir: DATA_DIR,
+    getTitle: async (kpId) => (await getWatchInfo(kpId)).title,
+    log: (message) => console.log(message)
+});
 
 // Виджет строит адрес от корня сайта: baseUrl + /api/players
 app.get('/api/players', async (req, res) => {
@@ -911,80 +903,84 @@ app.get('/api/players', async (req, res) => {
     if (!/^[\w=&%.-]*$/.test(query)) {
         return res.status(400).json({ error: 'Invalid query' });
     }
-
-    const cached = kinoboxCache.get(query);
-    if (cached && Date.now() - cached.at < 10 * 60 * 1000) return res.json(cached.data);
-
-    const configured = ktwConfig.resolveKinoboxApi();
-    const mirrors = configured ? [configured, ...KINOBOX_MIRRORS.filter((m) => m !== configured)] : KINOBOX_MIRRORS;
-    let lastError = 'нет ответа';
-
-    for (const mirror of mirrors) {
-        try {
-            const response = await fetch(`${mirror}${mirror.includes('?') ? '&' : '?'}${query}`, {
-                headers: { Referer: 'https://kinobox.tv/', Origin: 'https://kinobox.tv' },
-                signal: AbortSignal.timeout(10000)
-            });
-            if (!response.ok) throw new Error(`HTTP ${response.status}`);
-            const data = await response.json();
-            if (data && Array.isArray(data.data) && data.data.length) {
-                data.data.sort((a, b) => playerPriority(b.type) - playerPriority(a.type));
-                kinoboxCache.set(query, { at: Date.now(), data });
-                return res.json(data);
-            }
-            lastError = 'пустой список плееров';
-        } catch (error) {
-            lastError = error.message;
+    try {
+        const result = await players.getPlayers(query);
+        if (!result.data.length) {
+            return res.status(502).json({ error: { title: 'Плееры не найдены ни в одном источнике' } });
         }
+        // Виджет принимает только абсолютные ссылки; свой плеер (play.html)
+        // открываем с того же адреса, что и страницу, — иначе не дойдут сообщения
+        const origin = `${req.protocol}://${req.get('host')}`;
+        const absolute = (url) => (typeof url === 'string' && url.startsWith('/') ? origin + url : url);
+        res.json({
+            data: result.data.map((p) => ({
+                ...p,
+                iframeUrl: absolute(p.iframeUrl),
+                translations: (p.translations || []).map((t) => ({ ...t, iframeUrl: absolute(t.iframeUrl) }))
+            }))
+        });
+    } catch (error) {
+        res.status(502).json({ error: { title: `Плееры не получены: ${error.message}` } });
     }
-    res.status(502).json({ error: { title: `Плееры не получены: ${lastError}` } });
+});
+
+// Отзыв о плеере для живого рейтинга: смотрели (ok) или сразу ушли (fail)
+app.post('/api/players/feedback', (req, res) => {
+    const type = String((req.body && req.body.type) || '').slice(0, 40);
+    if (!type) return res.status(400).json({ error: 'type is required', success: false });
+    players.feedback(type, req.body.ok === true);
+    res.json({ success: true });
 });
 
 // Что показать в шапке страницы просмотра: из коллекции, истории ktw или Кинопоиска
+async function getWatchInfo(kpId) {
+    const info = { kpId, title: '', year: '', serial: false, poster: '', filmId: null, hasHistory: false };
+
+    const film = await findFilmByKpId(kpId);
+    if (film) {
+        Object.assign(info, {
+            title: film.title,
+            year: film.year || '',
+            serial: film.contentType === 'series',
+            poster: film.bannerUrl ? '/' + film.bannerUrl : '',
+            filmId: film.id
+        });
+    }
+
+    const watched = ktwHistory.read().items.find((i) => String(i.filmId) === kpId);
+    info.hasHistory = Boolean(watched && (watched.timePos > 0 || watched.watched));
+    const fromHistory = watched || ktwHistory.readOpened().find((i) => String(i.filmId) === kpId);
+    if (fromHistory && !info.title) {
+        Object.assign(info, {
+            title: fromHistory.title || '',
+            year: fromHistory.year || '',
+            serial: Boolean(fromHistory.serial),
+            poster: fromHistory.poster || ''
+        });
+    }
+
+    if (!info.title && kinopoisk.getKey()) {
+        try {
+            const details = await kinopoisk.raw(`api/v2.2/films/${kpId}`);
+            Object.assign(info, {
+                title: details.nameRu || details.nameOriginal || details.nameEn || '',
+                year: details.year ? String(details.year) : '',
+                serial: Boolean(details.serial) || ['TV_SERIES', 'MINI_SERIES', 'TV_SHOW'].includes(details.type),
+                poster: details.posterUrlPreview || details.posterUrl || ''
+            });
+        } catch {}
+    }
+
+    return info;
+}
+
 app.get('/api/watch/info/:kpId', async (req, res) => {
     const kpId = req.params.kpId;
     if (!/^\d+$/.test(kpId)) {
         return res.status(400).json({ error: 'Invalid id', success: false });
     }
     try {
-        const info = { kpId, title: '', year: '', serial: false, poster: '', filmId: null, hasHistory: false };
-
-        const film = await findFilmByKpId(kpId);
-        if (film) {
-            Object.assign(info, {
-                title: film.title,
-                year: film.year || '',
-                serial: film.contentType === 'series',
-                poster: film.bannerUrl ? '/' + film.bannerUrl : '',
-                filmId: film.id
-            });
-        }
-
-        const watched = ktwHistory.read().items.find((i) => String(i.filmId) === kpId);
-        info.hasHistory = Boolean(watched && (watched.timePos > 0 || watched.watched));
-        const fromHistory = watched || ktwHistory.readOpened().find((i) => String(i.filmId) === kpId);
-        if (fromHistory && !info.title) {
-            Object.assign(info, {
-                title: fromHistory.title || '',
-                year: fromHistory.year || '',
-                serial: Boolean(fromHistory.serial),
-                poster: fromHistory.poster || ''
-            });
-        }
-
-        if (!info.title && kinopoisk.getKey()) {
-            try {
-                const details = await kinopoisk.raw(`api/v2.2/films/${kpId}`);
-                Object.assign(info, {
-                    title: details.nameRu || details.nameOriginal || details.nameEn || '',
-                    year: details.year ? String(details.year) : '',
-                    serial: Boolean(details.serial) || ['TV_SERIES', 'MINI_SERIES', 'TV_SHOW'].includes(details.type),
-                    poster: details.posterUrlPreview || details.posterUrl || ''
-                });
-            } catch {}
-        }
-
-        res.json(info);
+        res.json(await getWatchInfo(kpId));
     } catch (error) {
         res.status(500).json({ error: error.message });
     }

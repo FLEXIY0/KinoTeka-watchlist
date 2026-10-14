@@ -96,28 +96,65 @@
         rememberPlayerChoice();
     }
 
-    // Запоминаем выбранный балансер для этого фильма и выбираем его в следующий раз
+    // ─── Какой плеер выбран: память и живой рейтинг ────────────────────────
+    //
+    // Порядок пунктов меню виджета совпадает со списком /api/players (сервер
+    // отдаёт его из кэша), поэтому по номеру пункта знаем тип плеера.
+    // Запоминаем тип (а не номер — порядок меняется вместе с рейтингом) и
+    // сообщаем серверу: быстро ушли с плеера — плохо, смотрели — хорошо.
+
+    let playerTypes = [];
+    const rating = { type: null, since: 0, reported: new Set() };
+
+    function feedback(type, ok) {
+        if (!type || rating.reported.has(type)) return;
+        rating.reported.add(type);
+        fetch('/api/players/feedback', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ type, ok })
+        }).catch(() => {});
+    }
+
+    function selectPlayer(type) {
+        if (!type || type === rating.type) return;
+        // Ушли меньше чем через 25 секунд — этот плеер, видимо, не заработал
+        if (rating.type && Date.now() - rating.since < 25000) feedback(rating.type, false);
+        rating.type = type;
+        rating.since = Date.now();
+        progress.player = type;
+        try { localStorage.setItem(savedPlayerKey, type); } catch {}
+    }
+
+    // Три минуты на одном плеере — значит, смотрят
+    setInterval(() => {
+        if (rating.type && !document.hidden && Date.now() - rating.since > 180000) feedback(rating.type, true);
+    }, 15000);
+
     function rememberPlayerChoice() {
         let restored = false;
-        const observer = new MutationObserver(() => {
+        const typesReady = fetch('/api/players?kinopoisk=' + kpId)
+            .then((r) => (r.ok ? r.json() : { data: [] }))
+            .then((d) => { playerTypes = (d.data || []).map((p) => p.type); })
+            .catch(() => {});
+
+        const observer = new MutationObserver(async () => {
             const items = Array.from(player.querySelectorAll('li')).filter((li) => li.offsetWidth > 0);
-            if (!items.length) return;
+            if (!items.length || restored) return;
+            restored = true;
+            await typesReady;
 
             items.forEach((item, index) => {
-                if (item.dataset.ktBound) return;
-                item.dataset.ktBound = '1';
-                item.addEventListener('click', () => {
-                    progress.player = item.textContent.trim().slice(0, 40);
-                    try { localStorage.setItem(savedPlayerKey, String(index)); } catch {}
-                });
+                item.addEventListener('click', () => selectPlayer(playerTypes[index]));
             });
 
-            if (!restored) {
-                restored = true;
-                let saved = null;
-                try { saved = localStorage.getItem(savedPlayerKey); } catch {}
-                const idx = saved === null ? -1 : parseInt(saved, 10);
-                if (idx >= 0 && idx < items.length) setTimeout(() => items[idx].click(), 300);
+            let saved = null;
+            try { saved = localStorage.getItem(savedPlayerKey); } catch {}
+            const idx = saved ? playerTypes.indexOf(saved) : -1;
+            if (idx > 0 && idx < items.length) {
+                setTimeout(() => items[idx].click(), 300);
+            } else {
+                selectPlayer(playerTypes[0]); // виджет сам открывает первый плеер
             }
         });
         observer.observe(player, { childList: true, subtree: true });
@@ -161,9 +198,21 @@
         const data = event.data;
         if (!data || typeof data !== 'object' || typeof data.key !== 'string') return;
 
+        // Свой плеер (play.html) сообщает, заработал он или нет
+        if (data.key === 'kt_progress') {
+            gotRealProgress = true;
+            feedback(data.player, true);
+            return;
+        }
+        if (data.key === 'kt_player_failed') {
+            feedback(data.player, false);
+            return;
+        }
+
         if (data.key === 'kodik_player_time_update' && Number.isFinite(Number(data.value))) {
             progress.timePos = Number(data.value);
             gotRealProgress = true;
+            if (progress.timePos > 0) feedback('Kodik', true);
             if (progress.timePos > 0) sendProgress(false);
         } else if (data.key === 'kodik_player_duration_update' && Number.isFinite(Number(data.value))) {
             progress.duration = Number(data.value);
