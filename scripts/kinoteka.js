@@ -30,7 +30,10 @@ const first = (args[0] || '').toLowerCase();
 
 // Установлено через install.ps1 / install.sh (без git) — обновляемся им же
 function isInstallerSetup() {
-    return fs.existsSync(path.join(ROOT, '.kinoteka-version')) && !fs.existsSync(path.join(ROOT, '.git'));
+    // KINOTEKA_HOME задаёт команда ktw, которую пишет установщик: так установка
+    // узнаётся, даже если файл версии потерялся
+    if (fs.existsSync(path.join(ROOT, '.git'))) return false;
+    return fs.existsSync(path.join(ROOT, '.kinoteka-version')) || Boolean(process.env.KINOTEKA_HOME);
 }
 
 // На Windows mpv после установки через winget/scoop не всегда сразу в PATH
