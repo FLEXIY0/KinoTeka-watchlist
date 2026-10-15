@@ -170,7 +170,9 @@ jobs:
     steps:
       - name: Установка и запуск в Termux
         run: |
-          cat > run.sh <<'SCRIPT'
+          # Точка входа образа сбрасывает окружение — значения вписываем в скрипт
+          printf 'export KINOTEKA_REF=%s KINOTEKA_RAW_BASE=%s\n' "$KINOTEKA_REF" "$KINOTEKA_RAW_BASE" > run.sh
+          cat >> run.sh <<'SCRIPT'
           set -e
           curl -fsSL "${KINOTEKA_RAW_BASE}install.sh" | KINOTEKA_NO_START=1 sh
           test ! -e ~/.local/share/kinoteka/node || { echo 'glibc node must not be left on Android'; exit 1; }
@@ -183,5 +185,5 @@ jobs:
           test -f ~/.local/share/kinoteka/data/films_and_serials/1/data.json || { cat ~/ktw.log; exit 1; }
           echo OK
           SCRIPT
-          docker run --rm --security-opt seccomp=unconfined -e KINOTEKA_REF -e KINOTEKA_RAW_BASE \
+          docker run --rm --security-opt seccomp=unconfined \
             -v "$PWD/run.sh:/run.sh:ro" termux/termux-docker:x86_64 bash /run.sh
