@@ -186,7 +186,9 @@ node_platform() {
         armv7l) _arch=armv7l ;;
         *) return 1 ;;
     esac
-    # Сборки с nodejs.org собраны под glibc: на Alpine (musl) они не запустятся
+    # Сборки с nodejs.org собраны под glibc: на Android (Termux) и Alpine (musl)
+    # они не запустятся — там Node ставится из пакетов
+    [ "$IS_TERMUX" = 1 ] && return 1
     if [ "$_os" = linux ] && (ldd --version 2>&1 || true) | grep -qi musl; then return 1; fi
     printf '%s-%s' "$_os" "$_arch"
 }
@@ -227,11 +229,17 @@ setup_node() {
         use_node "$NODE_DIR/bin/node"
         return
     fi
+    # Неподходящую сборку не оставляем: команда ktw взяла бы её первой
+    rm -rf "$NODE_DIR"
 
     # Alpine, Termux, редкие архитектуры — Node из пакетов системы
     step 'Ставлю Node.js из пакетов системы...'
-    pkg_install nodejs >/dev/null 2>&1 || true
-    pkg_install npm >/dev/null 2>&1 || true
+    if [ "$IS_TERMUX" = 1 ]; then
+        pkg install -y nodejs-lts < /dev/null >/dev/null 2>&1 || pkg install -y nodejs < /dev/null >/dev/null 2>&1 || true
+    else
+        pkg_install nodejs >/dev/null 2>&1 || true
+        pkg_install npm >/dev/null 2>&1 || true
+    fi
     if has node && node_ok "$(command -v node)"; then
         use_node "$(command -v node)"
         return
@@ -305,6 +313,13 @@ setup_mpv() {
     has mpv && return
     [ "${KINOTEKA_SKIP_MPV:-}" = 1 ] && return
 
+    # На Android видео без графической оболочки mpv не покажет: ktw отдаёт
+    # поток плееру Android (VLC, MX Player, mpv-android)
+    if [ "$IS_TERMUX" = 1 ]; then
+        info 'ktw будет открывать видео в плеере Android — поставьте VLC или MX Player'
+        return
+    fi
+
     step 'Ставлю видеоплеер mpv (нужен для просмотра в ktw)...'
     if pkg_install mpv >/dev/null 2>&1 && has mpv; then
         info "mpv: $(command -v mpv)"
@@ -335,9 +350,13 @@ setup_command() {
 
     # Свой Node — в папке КиноТеки; системный запоминаем полным путём,
     # а если его потом обновят или удалят — берём node из PATH
+    # В Termux нет /bin/sh — оболочка лежит в $PREFIX/bin
+    _sh=/bin/sh
+    [ "$IS_TERMUX" = 1 ] && [ -x "${PREFIX:-}/bin/sh" ] && _sh="$PREFIX/bin/sh"
+
     rm -f "$_ktw"
     {
-        say '#!/bin/sh'
+        say "#!$_sh"
         say '# КиноТека: команда ktw (создана install.sh)'
         say "KT_HOME=$(quote "$KT_HOME")"
         say "KT_NODE=$(quote "$NODE_BIN")"
