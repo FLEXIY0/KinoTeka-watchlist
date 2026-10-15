@@ -25,10 +25,16 @@ ktw входит в КиноТеку и ставится вместе с ней 
 irm https://raw.githubusercontent.com/FLEXIY0/KinoTeka-watchlist/main/install.ps1 | iex
 ```
 
+На Linux и macOS — одна команда в терминале:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/FLEXIY0/KinoTeka-watchlist/main/install.sh | sh
+```
+
 После неё в любом терминале: `ktw watch` — плеер, `ktw матрица` — сразу фильм, просто `ktw` — коллекция.
 Из исходников: `npm install`, затем `node scripts/kinoteka.js watch`.
 
-Нужны Node.js 20+ и [mpv](https://mpv.io) (установщик ставит mpv через winget).
+Нужны Node.js 20+ и [mpv](https://mpv.io) (установщик ставит mpv сам: через winget на Windows, через пакетный менеджер на Linux и brew на macOS).
 
 Всё, что посмотрено в ktw, само попадает в коллекцию КиноТеки: сериал — после первой
 серии, фильм — как начатый или досмотренный. Ключ Кинопоиска общий: введённый в поиске

@@ -1,8 +1,9 @@
 'use strict';
 
 // Откуда установлен ktw и как его обновить.
-// ktw живёт внутри KinoTeka-watchlist: на Windows его ставит install.ps1
-// (без git, версия лежит в .kinoteka-version), у разработчиков — git-клон.
+// ktw живёт внутри KinoTeka-watchlist: его ставит install.ps1 (Windows) или
+// install.sh (Linux, macOS) — без git, версия лежит в .kinoteka-version;
+// у разработчиков — git-клон.
 
 var fs = require('fs');
 var path = require('path');
@@ -11,6 +12,7 @@ var execFileSync = require('child_process').execFileSync;
 var ROOT = path.resolve(__dirname, '..', '..');
 var REPO = 'FLEXIY0/KinoTeka-watchlist';
 var INSTALL_CMD_WIN = 'irm https://raw.githubusercontent.com/' + REPO + '/main/install.ps1 | iex';
+var INSTALL_CMD_UNIX = 'curl -fsSL https://raw.githubusercontent.com/' + REPO + '/main/install.sh | sh';
 var CLONE_CMD = 'git clone https://github.com/' + REPO + '.git && cd KinoTeka-watchlist && npm install';
 
 function git(args) {
@@ -55,13 +57,14 @@ function installedVersion() {
 function updateHint() {
     if (isGit()) return 'git -C ' + ROOT + ' pull && npm install';
     if (process.platform === 'win32') return 'закрой КиноТеку и вставь в PowerShell: ' + INSTALL_CMD_WIN;
-    return CLONE_CMD;
+    return INSTALL_CMD_UNIX;
 }
 
 module.exports = {
     ROOT: ROOT,
     REPO: REPO,
     INSTALL_CMD_WIN: INSTALL_CMD_WIN,
+    INSTALL_CMD_UNIX: INSTALL_CMD_UNIX,
     CLONE_CMD: CLONE_CMD,
     git: git,
     isGit: isGit,

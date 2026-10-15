@@ -2,7 +2,7 @@
 
 // Самообновление ktw (ktw --update / -u).
 // ktw входит в КиноТеку: git-клон обновляется через git pull, установка
-// через install.ps1 — повторным запуском той же команды.
+// через install.ps1 / install.sh — повторным запуском той же команды.
 
 var execFileSync = require('child_process').execFileSync;
 
@@ -24,8 +24,9 @@ async function runUpdate() {
             ui.info('  ' + ui.color.cyan(info.INSTALL_CMD_WIN));
             ui.info(ui.color.dim('  Она скачает свежую версию; фильмы и история не затрагиваются.'));
         } else {
-            ui.info('  Установка не из git. Свежая версия:');
-            ui.info('  ' + ui.color.cyan(info.CLONE_CMD));
+            ui.info('  Вставь в терминал ту же команду, что и при установке:');
+            ui.info('  ' + ui.color.cyan(info.INSTALL_CMD_UNIX));
+            ui.info(ui.color.dim('  Она скачает свежую версию; фильмы и история не затрагиваются.'));
         }
         ui.info('');
         return 0;

@@ -76,7 +76,19 @@ ktw update       обновиться
 
 Всё лежит в `%LOCALAPPDATA%\KinoTeka`, ваши фильмы — в `%LOCALAPPDATA%\KinoTeka\data` и при обновлении не затрагиваются. Ключ Кинопоиска и история ktw — в `%USERPROFILE%\.config\ktw`.
 
-### Из исходников (Windows / Linux / macOS)
+### Linux и macOS — одной командой
+
+Откройте терминал, вставьте и нажмите Enter:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/FLEXIY0/KinoTeka-watchlist/main/install.sh | sh
+```
+
+То же самое, что на Windows: возьмёт Node.js 20+ из системы или скачает портативный (без root), поставит приложение и mpv (может спросить пароль sudo — только для mpv), добавит команду `ktw` и запустит КиноТеку. Работает и в Termux. Если нет `curl`: `wget -qO- …/install.sh | sh`.
+
+Всё лежит в `~/.local/share/kinoteka`, фильмы — в `~/.local/share/kinoteka/data`, команда — `~/.local/bin/ktw`. В уже открытом окне терминала `ktw` появится после `exec $SHELL -l` (или откройте новое окно). Обновление — `ktw update`.
+
+### Из исходников (для разработки)
 
 Нужен [Node.js](https://nodejs.org/) 20 или новее.
 
