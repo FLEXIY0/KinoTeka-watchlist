@@ -70,6 +70,10 @@ function openUrl(url) {
         exec('start "" "' + url + '"');
     } else if (process.platform === 'darwin') {
         spawn('open', [url], { detached: true, stdio: 'ignore' }).unref();
+    } else if (process.env.TERMUX_VERSION || require('fs').existsSync('/data/data/com.termux')) {
+        spawn('termux-open-url', [url], { detached: true, stdio: 'ignore' })
+            .on('error', function () {})
+            .unref();
     } else {
         spawn('xdg-open', [url], { detached: true, stdio: 'ignore' })
             .on('error', function () {})

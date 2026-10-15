@@ -25,6 +25,7 @@ const MAX_LOG_LINES = 300;
 const args = process.argv.slice(2);
 const AUTO_OPEN = !args.includes('--no-browser');
 const INTERACTIVE = Boolean(process.stdin.isTTY && process.stdout.isTTY);
+const IS_TERMUX = Boolean(process.env.TERMUX_VERSION) || fs.existsSync('/data/data/com.termux');
 
 const state = {
     status: 'starting', // starting | running | external | stopped | error
@@ -112,6 +113,10 @@ function openBrowser(asApp = true) {
             exec(`start "" "${url}"`);
         } else if (process.platform === 'darwin') {
             spawn('open', [url], { detached: true, stdio: 'ignore' }).unref();
+        } else if (IS_TERMUX) {
+            spawn('termux-open-url', [url], { detached: true, stdio: 'ignore' })
+                .on('error', () => addLog(`Не удалось открыть браузер. Откройте вручную: ${url}`))
+                .unref();
         } else {
             spawn('xdg-open', [url], { detached: true, stdio: 'ignore' })
                 .on('error', () => addLog(`Не удалось открыть браузер. Откройте вручную: ${url}`))
@@ -300,6 +305,15 @@ function draw() {
 
 // ─── Управление ─────────────────────────────────────────────────────────────
 
+// Android усыпляет Termux, когда он в фоне, и сервер перестаёт отвечать
+// браузеру. Пока КиноТека запущена, держим его бодрствующим
+function termuxWakeLock(on) {
+    if (!IS_TERMUX) return;
+    try {
+        spawn(on ? 'termux-wake-lock' : 'termux-wake-unlock', [], { stdio: 'ignore' }).on('error', () => {});
+    } catch {}
+}
+
 let quitting = false;
 async function quit() {
     if (quitting) return;
@@ -309,6 +323,7 @@ async function quit() {
     }
     console.log('Остановка КиноТеки…');
     await stopServer();
+    termuxWakeLock(false);
     console.log('Сервер остановлен. До встречи!');
     process.exit(0);
 }
@@ -391,6 +406,7 @@ async function main() {
     const ok = await startServer();
 
     if (ok) {
+        termuxWakeLock(true);
         if (!INTERACTIVE) console.log(`КиноТека работает: ${appUrl()}`);
         if (AUTO_OPEN && !state.openedOnce) {
             state.openedOnce = true;

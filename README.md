@@ -84,7 +84,9 @@ ktw update       обновиться
 curl -fsSL https://raw.githubusercontent.com/FLEXIY0/KinoTeka-watchlist/main/install.sh | sh
 ```
 
-То же самое, что на Windows: возьмёт Node.js 20+ из системы или скачает портативный (без root), поставит приложение и mpv (может спросить пароль sudo — только для mpv), добавит команду `ktw` и запустит КиноТеку. Работает и в Termux. Если нет `curl`: `wget -qO- …/install.sh | sh`.
+То же самое, что на Windows: возьмёт Node.js 20+ из системы или скачает портативный (без root), поставит приложение и mpv (может спросить пароль sudo — только для mpv), добавит команду `ktw` и запустит КиноТеку. Если нет `curl`: `wget -qO- …/install.sh | sh`.
+
+**Android (Termux).** Поставьте [Termux](https://f-droid.org/packages/com.termux/) из F-Droid (версия из Google Play устарела) и вставьте ту же команду. Коллекция откроется в браузере телефона на `http://localhost:3000`, смотреть можно прямо там. ktw в Termux открывает видео в плеере Android — поставьте VLC или MX Player. Пока КиноТека запущена, Termux не засыпает (wake lock); закрыть — клавиша **Q**.
 
 Всё лежит в `~/.local/share/kinoteka`, фильмы — в `~/.local/share/kinoteka/data`, команда — `~/.local/bin/ktw`. В уже открытом окне терминала `ktw` появится после `exec $SHELL -l` (или откройте новое окно). Обновление — `ktw update`.
 
