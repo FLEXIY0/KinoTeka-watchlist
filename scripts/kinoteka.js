@@ -16,14 +16,24 @@ const { spawnSync } = require('child_process');
 const ROOT = path.join(__dirname, '..');
 const KTW = path.join(ROOT, 'ktw', 'ktw.js');
 const LAUNCHER = path.join(__dirname, 'app_launcher.js');
-const INSTALL_CMD = 'irm https://raw.githubusercontent.com/FLEXIY0/KinoTeka-watchlist/main/install.ps1 | iex';
+// Откуда брать установщик (переопределяется в CI, чтобы проверить именно этот коммит)
+const RAW = process.env.KINOTEKA_RAW_BASE || 'https://raw.githubusercontent.com/FLEXIY0/KinoTeka-watchlist/main/';
+const INSTALL_CMD = `irm ${RAW}install.ps1 | iex`;
+// Сначала скачиваем целиком, потом запускаем: при обрыве связи `curl | sh` молча
+// выполнил бы пустой скрипт. curl есть не везде — на минимальных системах wget
+const INSTALL_CMD_UNIX = `s=$(curl -fsSL '${RAW}install.sh' 2>/dev/null || wget -qO- '${RAW}install.sh' 2>/dev/null)
+if [ -z "$s" ]; then echo 'Нет связи с GitHub — обновиться не удалось' >&2; exit 1; fi
+printf '%s\n' "$s" | sh`;
 
 const args = process.argv.slice(2);
 const first = (args[0] || '').toLowerCase();
 
-// Установлено через install.ps1 (без git) — обновляемся им же
+// Установлено через install.ps1 / install.sh (без git) — обновляемся им же
 function isInstallerSetup() {
-    return fs.existsSync(path.join(ROOT, '.kinoteka-version')) && !fs.existsSync(path.join(ROOT, '.git'));
+    // KINOTEKA_HOME задаёт команда ktw, которую пишет установщик: так установка
+    // узнаётся, даже если файл версии потерялся
+    if (fs.existsSync(path.join(ROOT, '.git'))) return false;
+    return fs.existsSync(path.join(ROOT, '.kinoteka-version')) || Boolean(process.env.KINOTEKA_HOME);
 }
 
 // На Windows mpv после установки через winget/scoop не всегда сразу в PATH
@@ -88,7 +98,10 @@ function installerUpdate() {
     console.log('Обновляю КиноТеку…');
     // Запускаем из папки установки, а не приложения: папку приложения установщик заменяет
     const home = path.join(ROOT, '..');
-    const result = spawnSync('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', INSTALL_CMD], {
+    const [cmd, cmdArgs] = process.platform === 'win32'
+        ? ['powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', INSTALL_CMD]]
+        : ['sh', ['-c', INSTALL_CMD_UNIX]];
+    const result = spawnSync(cmd, cmdArgs, {
         stdio: 'inherit',
         cwd: home,
         env: { ...process.env, KINOTEKA_NO_START: '1', KINOTEKA_HOME: process.env.KINOTEKA_HOME || home }
@@ -115,7 +128,7 @@ if (!args.length || ['list', 'app', 'список'].includes(first)) {
     runModule(LAUNCHER, args.slice(1));
 } else if (['help', '--help', '-h', 'помощь'].includes(first)) {
     help();
-} else if (['update', '--update', '-u', 'обновить'].includes(first) && process.platform === 'win32' && isInstallerSetup()) {
+} else if (['update', '--update', '-u', 'обновить'].includes(first) && isInstallerSetup()) {
     installerUpdate();
 } else if (['update', 'обновить'].includes(first)) {
     runModule(KTW, ['--update']);

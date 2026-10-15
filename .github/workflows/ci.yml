@@ -112,3 +112,50 @@ jobs:
           } finally {
             taskkill /PID $proc.Id /T /F | Out-Null
           }
+
+  # То же для Linux и macOS: curl -fsSL .../install.sh | sh
+  # Папка установки — с кириллицей и пробелом
+  install-unix:
+    name: install.sh / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    env:
+      KINOTEKA_REF: ${{ github.event.pull_request.head.sha || github.sha }}
+      KINOTEKA_RAW_BASE: https://raw.githubusercontent.com/${{ github.repository }}/${{ github.event.pull_request.head.sha || github.sha }}/
+      KINOTEKA_SKIP_MPV: '1'
+    steps:
+      - name: Первая установка (портативный Node)
+        run: |
+          # runner.temp недоступен в env задачи — задаём пути здесь
+          export KINOTEKA_HOME="$RUNNER_TEMP/Кинотека Test" KINOTEKA_BIN="$RUNNER_TEMP/bin"
+          printf 'KINOTEKA_HOME=%s\nKINOTEKA_BIN=%s\n' "$KINOTEKA_HOME" "$KINOTEKA_BIN" >> "$GITHUB_ENV"
+          curl -fsSL "${KINOTEKA_RAW_BASE}install.sh" | KINOTEKA_NO_START=1 KINOTEKA_PORTABLE_NODE=1 sh
+          for p in node/bin/node app/server.js app/node_modules/express app/node_modules/figlet app/.kinoteka-version; do
+            test -e "$KINOTEKA_HOME/$p" || { echo "missing $p"; exit 1; }
+          done
+          test -x "$KINOTEKA_BIN/ktw" || { echo 'missing ktw'; exit 1; }
+          test ! -e "$KINOTEKA_HOME/app/assets/images/demo.gif" || { echo 'demo.gif should not be downloaded'; exit 1; }
+          grep -q "$KINOTEKA_BIN" ~/.profile || { echo 'PATH was not added to ~/.profile'; exit 1; }
+
+      - name: Команда ktw работает
+        run: |
+          "$KINOTEKA_BIN/ktw" help | grep -q 'ktw watch'
+          "$KINOTEKA_BIN/ktw" --version 2>&1 | tee /dev/stderr | grep -q "$(printf '%s' "$KINOTEKA_REF" | cut -c1-7)"
+
+      - name: Обновление командой ktw update (GitHub API не отвечает)
+        run: |
+          rm "$KINOTEKA_HOME/app/.kinoteka-version"
+          KINOTEKA_GITHUB_API=http://127.0.0.1:9 "$KINOTEKA_BIN/ktw" update
+          test "$(cat "$KINOTEKA_HOME/app/.kinoteka-version")" = "$KINOTEKA_REF" || { echo 'app was not re-downloaded'; exit 1; }
+
+      - name: Запуск коллекции командой ktw
+        run: |
+          "$KINOTEKA_BIN/ktw" < /dev/null > ktw.log 2>&1 &
+          for i in $(seq 1 60); do curl -sf http://127.0.0.1:3000/api/films > /dev/null && break; sleep 1; done
+          curl -sf -o /dev/null http://127.0.0.1:3000/ || { cat ktw.log; exit 1; }
+          id=$(curl -sf -X POST -H 'Content-Type: application/json' -d '{"title":"Test"}' http://127.0.0.1:3000/api/films | sed 's/.*"id":"\{0,1\}\([^",}]*\).*/\1/')
+          test -f "$KINOTEKA_HOME/data/films_and_serials/$id/data.json" || { echo "film $id was not saved"; cat ktw.log; exit 1; }
+          echo "OK: film $id saved"
