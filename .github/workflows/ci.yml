@@ -159,3 +159,29 @@ jobs:
           id=$(curl -sf -X POST -H 'Content-Type: application/json' -d '{"title":"Test"}' http://127.0.0.1:3000/api/films | sed 's/.*"id":"\{0,1\}\([^",}]*\).*/\1/')
           test -f "$KINOTEKA_HOME/data/films_and_serials/$id/data.json" || { echo "film $id was not saved"; cat ktw.log; exit 1; }
           echo "OK: film $id saved"
+
+  # Android: настоящее окружение Termux (bionic, пакеты Termux) в Docker
+  install-termux:
+    name: install.sh / termux
+    runs-on: ubuntu-latest
+    env:
+      KINOTEKA_REF: ${{ github.event.pull_request.head.sha || github.sha }}
+      KINOTEKA_RAW_BASE: https://raw.githubusercontent.com/${{ github.repository }}/${{ github.event.pull_request.head.sha || github.sha }}/
+    steps:
+      - name: Установка и запуск в Termux
+        run: |
+          cat > run.sh <<'SCRIPT'
+          set -e
+          curl -fsSL "${KINOTEKA_RAW_BASE}install.sh" | KINOTEKA_NO_START=1 sh
+          test ! -e ~/.local/share/kinoteka/node || { echo 'glibc node must not be left on Android'; exit 1; }
+          head -1 "$PREFIX/bin/ktw" | grep -q "^#!$PREFIX/bin/sh" || { echo 'bad ktw shebang'; exit 1; }
+          ktw help | grep -q 'ktw watch'
+          (KINOTEKA_NO_SYNC=1 ktw < /dev/null > ~/ktw.log 2>&1 &)
+          for i in $(seq 1 60); do curl -sf http://127.0.0.1:3000/api/films > /dev/null && break; sleep 1; done
+          curl -sf -o /dev/null http://127.0.0.1:3000/ || { cat ~/ktw.log; exit 1; }
+          curl -sf -X POST -H 'Content-Type: application/json' -d '{"title":"Test"}' http://127.0.0.1:3000/api/films
+          test -f ~/.local/share/kinoteka/data/films_and_serials/1/data.json || { cat ~/ktw.log; exit 1; }
+          echo OK
+          SCRIPT
+          docker run --rm --security-opt seccomp=unconfined -e KINOTEKA_REF -e KINOTEKA_RAW_BASE \
+            -v "$PWD/run.sh:/run.sh:ro" termux/termux-docker:x86_64 bash /run.sh
